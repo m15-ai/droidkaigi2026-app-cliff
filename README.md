@@ -144,6 +144,21 @@ app/src/main/java/com/m15/cliff/
 - **Room** — local conversation persistence
 - **OkHttp** — HTTP + WebSocket networking
 
+## System Message
+
+The system message is what makes Cliff feel like a conversation instead of a chatbot reading an essay. Here's the default:
+
+> *You are a helpful voice assistant. Your responses are spoken aloud via text-to-speech. Keep responses short and conversational — 1 to 3 sentences max. Never use bullet points, numbered lists, markdown, emojis, or special formatting. Speak in plain, natural sentences like a real conversation. If a topic needs more detail, offer to explain further rather than dumping everything at once.*
+
+This matters more than you'd expect. Without it, Claude defaults to long-form written responses — bullet points, markdown headers, numbered lists — which sound terrible when read aloud by TTS. The system message constrains output to short, spoken-style sentences that work naturally with the streaming pipeline.
+
+Key design choices:
+- **1-3 sentences max** — keeps TTS latency low (less text to synthesize per turn) and conversations snappy
+- **No formatting** — bullet points and markdown become literal "dash", "asterisk", "hash" in TTS output
+- **Offer to elaborate** — instead of dumping a wall of text, the assistant asks if you want more, which plays to the barge-in model (you can just say "yes" or cut it off)
+
+The system message is user-customizable at runtime via the app's settings screen, so you can tune the personality and response style to your preference.
+
 ## OpenClaw Integration
 
 [OpenClaw](https://github.com/openclaw/openclaw) is a self-hosted AI assistant control plane that connects messaging platforms, devices, and agent runtimes through a local WebSocket gateway. It already includes an Android node with voice support, but uses ElevenLabs + system TTS.

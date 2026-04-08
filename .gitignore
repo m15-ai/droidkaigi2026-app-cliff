@@ -12,6 +12,7 @@
 .kotlin/
 SOCIAL_MEDIA_DRAFTS.md
 *.mp4
+sam_server.py
 /build
 /captures
 .externalNativeBuild

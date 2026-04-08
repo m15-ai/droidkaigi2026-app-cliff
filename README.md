@@ -101,7 +101,7 @@ Cliff is a client-only app. It expects a backend server that provides these auth
 | `POST /api/{secret_path}/deepgram/token` | Mint a short-lived Deepgram access token |
 | `POST /api/{secret_path}/claude/api-key` | Mint a short-lived Claude API key |
 
-See [`backend-endpoint-requirements.txt`](backend-endpoint-requirements.txt) for the full API contract.
+A reference implementation is included in the [`server/`](server/) directory — a FastAPI + SQLite server you can deploy in minutes. See [`server/README.md`](server/README.md) for setup instructions.
 
 The backend is responsible for:
 - Holding your Deepgram and Anthropic API keys securely

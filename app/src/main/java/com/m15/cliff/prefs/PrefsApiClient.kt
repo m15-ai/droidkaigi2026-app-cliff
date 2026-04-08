@@ -48,7 +48,7 @@ class PrefsApiClient(
             .url(apiUrl("/claim-invite"))
             .post(body.toRequestBody(JSON.toMediaType()))
             .header("Content-Type", JSON)
-            .header("X-Sam-App-Key", appKey)
+            .header("X-Cliff-App-Key", appKey)
             .build()
 
         executeOrThrow(req)
@@ -63,7 +63,7 @@ class PrefsApiClient(
             .url(apiUrl("/device-login"))
             .post(body.toRequestBody(JSON.toMediaType()))
             .header("Content-Type", JSON)
-            .header("X-Sam-App-Key", appKey)
+            .header("X-Cliff-App-Key", appKey)
             .build()
 
         val text = executeOrThrow(req)
@@ -153,7 +153,7 @@ class PrefsApiClient(
             .post("{}".toRequestBody(JSON.toMediaType()))
             .header("Content-Type", JSON)
             .header("Authorization", "Bearer $bearerToken")
-            .header("X-Sam-App-Key", appKey)
+            .header("X-Cliff-App-Key", appKey)
             .build()
 
         val text = executeOrThrow(req)
@@ -177,7 +177,7 @@ class PrefsApiClient(
             .url(apiUrl("/deepgram/token"))
             .post(bodyJson.toRequestBody("application/json; charset=utf-8".toMediaType()))
             .addHeader("Authorization", "Bearer $bearerToken")
-            .addHeader("X-Sam-App-Key", appKey)
+            .addHeader("X-Cliff-App-Key", appKey)
             .build()
 
         val raw = executeOrThrow(req)
@@ -202,7 +202,7 @@ class PrefsApiClient(
             .url(apiUrl("/invite-request"))
             .post(body.toRequestBody(JSON.toMediaType()))
             .header("Content-Type", JSON)
-            .header("X-Sam-App-Key", appKey)
+            .header("X-Cliff-App-Key", appKey)
             .build()
 
         // server returns {"ok": true} – we don’t need the body for now

@@ -11,7 +11,7 @@ POST /api/{secret_path}/claude/api-key
 Headers (required)
 ------------------
 Authorization: Bearer {device_token}
-X-Sam-App-Key: {app_key}
+X-Cliff-App-Key: {app_key}
 Content-Type: application/json
 
 Request Body
@@ -32,7 +32,7 @@ Auth
 ----
 - Same auth pattern as /deepgram/token and /openai/realtime-token
 - Validate the Bearer token (device login token)
-- Validate the X-Sam-App-Key header
+- Validate the X-Cliff-App-Key header
 - Return 401/403 if invalid (client will retry with fresh device login)
 
 Notes

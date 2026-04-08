@@ -15,19 +15,19 @@ Routes:
 - POST /api/{secret}/invite-request    — request an invite (pre-auth)
 
 Auth model:
-- Pre-seed invites via SAM_INVITES_JSON env var (invite_code -> device_key).
+- Pre-seed invites via CLIFF_INVITES_JSON env var (invite_code -> device_key).
 - claim-invite marks the invite as used (one-time).
 - device-login succeeds only if the device's invite has been claimed.
 - All other endpoints require Authorization: Bearer <token> from device-login.
-- X-Sam-App-Key header provides an extra gate on app-only endpoints.
+- X-Cliff-App-Key header provides an extra gate on app-only endpoints.
 
 Setup:
     pip install fastapi uvicorn aiosqlite
-    export SAM_SECRET_PATH="your_secret_path"
-    export SAM_APP_KEY="your_app_key"
-    export SAM_DEEPGRAM_API_KEY="dg-..."
-    export SAM_ANTHROPIC_API_KEY="sk-ant-..."
-    export SAM_INVITES_JSON='[{"code":"demo123","deviceKey":"ANDROID_ID_HERE","label":"My Phone"}]'
+    export CLIFF_SECRET_PATH="your_secret_path"
+    export CLIFF_APP_KEY="your_app_key"
+    export CLIFF_DEEPGRAM_API_KEY="dg-..."
+    export CLIFF_ANTHROPIC_API_KEY="sk-ant-..."
+    export CLIFF_INVITES_JSON='[{"code":"demo123","deviceKey":"ANDROID_ID_HERE","label":"My Phone"}]'
     uvicorn cliff_server:app --host 0.0.0.0 --port 8000
 """
 
@@ -49,27 +49,27 @@ import urllib.error
 # -----------------------
 # Config (env vars)
 # -----------------------
-SECRET_PATH = os.environ.get("SAM_SECRET_PATH", "change_me")
-DB_PATH = os.environ.get("SAM_DB_PATH", "./cliff.db")
+SECRET_PATH = os.environ.get("CLIFF_SECRET_PATH", "change_me")
+DB_PATH = os.environ.get("CLIFF_DB_PATH", "./cliff.db")
 
-DEEPGRAM_API_KEY = os.environ.get("SAM_DEEPGRAM_API_KEY", "").strip()
-ANTHROPIC_API_KEY = os.environ.get("SAM_ANTHROPIC_API_KEY", "").strip()
+DEEPGRAM_API_KEY = os.environ.get("CLIFF_DEEPGRAM_API_KEY", "").strip()
+ANTHROPIC_API_KEY = os.environ.get("CLIFF_ANTHROPIC_API_KEY", "").strip()
 
 # Seed invites from env var:
-# SAM_INVITES_JSON='[
+# CLIFF_INVITES_JSON='[
 #   {"code":"alice123","deviceKey":"ANDROIDID_ALICE","label":"Alice Pixel"},
 #   {"code":"bob456","deviceKey":"ANDROIDID_BOB","label":"Bob Samsung"}
 # ]'
-INVITES_JSON = os.environ.get("SAM_INVITES_JSON", "[]")
+INVITES_JSON = os.environ.get("CLIFF_INVITES_JSON", "[]")
 
-DEFAULT_MOOD = os.environ.get("SAM_DEFAULT_MOOD", "VENTING")
-DEFAULT_PERSONALITY = os.environ.get("SAM_DEFAULT_PERSONALITY", "NycVentMode")
+DEFAULT_MOOD = os.environ.get("CLIFF_DEFAULT_MOOD", "VENTING")
+DEFAULT_PERSONALITY = os.environ.get("CLIFF_DEFAULT_PERSONALITY", "NycVentMode")
 
-# Extra gate: app must send header X-Sam-App-Key: <value>
-SAM_APP_KEY = os.environ.get("SAM_APP_KEY", "").strip()
+# Extra gate: app must send header X-Cliff-App-Key: <value>
+CLIFF_APP_KEY = os.environ.get("CLIFF_APP_KEY", "").strip()
 
 # If true, logging in will delete older tokens for the same device_key
-DELETE_OLD_TOKENS_ON_LOGIN = os.environ.get("SAM_DELETE_OLD_TOKENS", "true").lower() == "true"
+DELETE_OLD_TOKENS_ON_LOGIN = os.environ.get("CLIFF_DELETE_OLD_TOKENS", "true").lower() == "true"
 
 
 # -----------------------
@@ -251,10 +251,10 @@ async def require_device_key(request: Request, db: aiosqlite.Connection) -> str:
 
 
 def _require_app_key(request: Request) -> None:
-    if SAM_APP_KEY:
-        hdr = (request.headers.get("X-Sam-App-Key") or "").strip()
-        if hdr != SAM_APP_KEY:
-            raise HTTPException(status_code=401, detail="Missing/invalid X-Sam-App-Key")
+    if CLIFF_APP_KEY:
+        hdr = (request.headers.get("X-Cliff-App-Key") or "").strip()
+        if hdr != CLIFF_APP_KEY:
+            raise HTTPException(status_code=401, detail="Missing/invalid X-Cliff-App-Key")
 
 
 async def ensure_invite_claimed_for_device(db: aiosqlite.Connection, device_key: str) -> None:
@@ -436,7 +436,7 @@ async def deepgram_token(
         _require_app_key(request)
 
         if not DEEPGRAM_API_KEY:
-            raise HTTPException(status_code=501, detail="Server missing SAM_DEEPGRAM_API_KEY")
+            raise HTTPException(status_code=501, detail="Server missing CLIFF_DEEPGRAM_API_KEY")
 
         ttl = max(1, min(3600, int(body.ttlSeconds or 600)))
 
@@ -474,7 +474,7 @@ async def claude_api_key(
         _require_app_key(request)
 
         if not ANTHROPIC_API_KEY:
-            raise HTTPException(status_code=501, detail="Server missing SAM_ANTHROPIC_API_KEY")
+            raise HTTPException(status_code=501, detail="Server missing CLIFF_ANTHROPIC_API_KEY")
 
         return {
             "api_key": ANTHROPIC_API_KEY,

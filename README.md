@@ -159,6 +159,30 @@ Key design choices:
 
 The system message is user-customizable at runtime via the app's settings screen, so you can tune the personality and response style to your preference.
 
+## Conversation History: Stateless vs. Stateful
+
+If you've used OpenAI's Realtime API, you'll notice Cliff takes a fundamentally different approach to conversation history.
+
+**OpenAI Realtime API** maintains a persistent WebSocket session on the server. The server tracks conversation state — you send audio in, get audio out, and the history lives server-side for the duration of the session. You don't resend previous messages; the server already has them.
+
+**Cliff + Claude Messages API** is stateless. Every request to Claude is an independent HTTP call with no server-side session. The app must send the **full conversation history** with each turn — system message, every user message, every assistant response, all in one request. Claude has no memory between requests.
+
+```
+OpenAI Realtime:   Audio ←→ [Persistent WebSocket Session w/ Server-Side State]
+Cliff + Claude:    Full History + New Message → [Stateless HTTP] → Streamed Response
+```
+
+**Why this approach?**
+
+- **Simplicity** — no session management, no reconnection logic, no state sync. Each request is self-contained. If a request fails, just retry it.
+- **Full control over context** — the app decides exactly what history to include. You can trim, summarize, or filter history client-side before sending.
+- **No session timeouts** — OpenAI's Realtime sessions expire after inactivity. Cliff's approach has no idle timeout — pick up the conversation whenever.
+- **Transparency** — the conversation history is stored locally in Room DB and sent explicitly. Nothing is hidden in server-side state.
+
+**The tradeoff** is bandwidth — resending full history means larger payloads as conversations grow. For voice conversations (which tend to be short, natural exchanges), this is negligible. For very long sessions, you'd want to implement history truncation or summarization.
+
+The local Room database persists all conversations across app restarts, so the user never loses context even though every Claude request starts fresh.
+
 ## OpenClaw Integration
 
 [OpenClaw](https://github.com/openclaw/openclaw) is a self-hosted AI assistant control plane that connects messaging platforms, devices, and agent runtimes through a local WebSocket gateway. It already includes an Android node with voice support, but uses ElevenLabs + system TTS.

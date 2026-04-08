@@ -1,7 +1,7 @@
 Backend Endpoint Requirement: Claude API Key
 ==============================================
 
-Add a new endpoint to sam-server.py that provides a Claude API key
+Endpoint on cliff_server.py that provides a Claude API key
 to authenticated Cliff app clients.
 
 Endpoint
@@ -30,7 +30,7 @@ Response (200 OK)
 
 Auth
 ----
-- Same auth pattern as /deepgram/token and /openai/realtime-token
+- Same auth pattern as /deepgram/token
 - Validate the Bearer token (device login token)
 - Validate the X-Cliff-App-Key header
 - Return 401/403 if invalid (client will retry with fresh device login)

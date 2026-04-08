@@ -11,6 +11,7 @@
 .idea/
 .kotlin/
 SOCIAL_MEDIA_DRAFTS.md
+*.mp4
 /build
 /captures
 .externalNativeBuild

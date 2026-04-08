@@ -2,6 +2,10 @@
 
 Cliff is an open-source Android voice assistant that delivers natural, real-time conversations powered by Claude and Deepgram. It features streaming speech-to-text, streaming LLM responses, streaming text-to-speech, and full barge-in (interruption) support — so conversations feel fluid and human.
 
+## Demo
+
+https://github.com/m15-ai/Cliff/releases/download/v0.1/Cliff-demo.mp4
+
 ## How It Works
 
 ```
@@ -139,6 +143,18 @@ app/src/main/java/com/m15/cliff/
 - **Anthropic Claude** — Sonnet 4 via Messages API with SSE streaming
 - **Room** — local conversation persistence
 - **OkHttp** — HTTP + WebSocket networking
+
+## OpenClaw Integration
+
+[OpenClaw](https://github.com/openclaw/openclaw) is a self-hosted AI assistant control plane that connects messaging platforms, devices, and agent runtimes through a local WebSocket gateway. It already includes an Android node with voice support, but uses ElevenLabs + system TTS.
+
+Cliff's streaming voice pipeline (Deepgram Flux STT with turn detection + Aura-2 TTS with delta streaming + barge-in) could serve as a high-quality voice interface for OpenClaw on Android. The integration path:
+
+- **OpenClaw's gateway** exposes a WebSocket RPC at `ws://127.0.0.1:18789` with session and tool-streaming APIs
+- **Cliff could connect as a client node**, sending transcribed user speech to OpenClaw and streaming agent responses back through the Deepgram TTS pipeline
+- This would give OpenClaw users real-time voice conversations with full interruption support, while OpenClaw handles agent orchestration, tool execution, and multi-device coordination
+
+This integration is not yet implemented — contributions welcome. The main work would be adding an OpenClaw gateway client alongside the existing Claude streaming client, routing transcribed text through OpenClaw's session API instead of directly to Claude.
 
 ## License
 

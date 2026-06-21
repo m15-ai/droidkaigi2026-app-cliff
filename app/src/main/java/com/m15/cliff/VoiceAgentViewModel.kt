@@ -11,12 +11,15 @@ import com.m15.cliff.net.flux.FluxClient
 import com.m15.cliff.net.LlmClient
 import com.m15.cliff.prefs.PrefsRepository
 import com.m15.cliff.tts.DeepgramTtsClient
+import com.m15.cliff.util.LatencyTracker
 import com.m15.cliff.util.areSimilar
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.math.max
+import kotlin.math.sqrt
 
 interface SupportsSpeakerphone {
     fun setSpeakerphoneEnabled(enabled: Boolean)
@@ -44,10 +47,9 @@ class VoiceAgentViewModel(
         private const val TAG = "VoiceAgentViewModel"
     }
 
-    // --- Backend gating (invite/token only) ---
+    // --- Backend gating ---
     sealed interface GateState {
         data object Checking : GateState
-        data object NeedsInvite : GateState
         data object Ready : GateState
         data class Error(val message: String) : GateState
     }
@@ -74,8 +76,17 @@ class VoiceAgentViewModel(
     private val _ttsLevel = MutableStateFlow(0f)
     val ttsLevel: StateFlow<Float> = _ttsLevel
 
+    // Mic input energy (RMS of captured PCM), so the visualizer also reacts
+    // while the user is speaking — not only during TTS playback.
+    private val _micLevel = MutableStateFlow(0f)
+    val micLevel: StateFlow<Float> = _micLevel
+
     private val _showVisualizer = MutableStateFlow(true)
     val showVisualizer: StateFlow<Boolean> = _showVisualizer
+
+    // --- Pipeline latency (time to first token) ---
+    private val latency = LatencyTracker()
+    val latencyMs: StateFlow<Long?> = latency.ttftMs
 
     init {
         Log.i(TAG, "VoiceAgentViewModel initialized")
@@ -94,34 +105,30 @@ class VoiceAgentViewModel(
                         val ok = prefsRepo.ensureValidTokenOrNull(deviceKey) != null
                         if (!ok) {
                             if (ui.value.sessionActive) stopSession()
-                            _gate.value = GateState.NeedsInvite
+                            autoLogin()
                         }
                     }
                 }
                 return@launch
             }
-            _gate.value = GateState.NeedsInvite
+            autoLogin()
         }
     }
 
-    fun submitInviteCode(inviteCode: String) {
-        viewModelScope.launch {
-            _gate.value = GateState.Checking
-            val deviceKey = ServiceLocator.deviceKey
-            runCatching {
-                prefsRepo.claimInvite(inviteCode, deviceKey)
-                prefsRepo.deviceLoginAndPersist(deviceKey)
-            }.onSuccess {
-                _gate.value = GateState.Ready
-            }.onFailure { t ->
-                _gate.value = GateState.Error(t.message ?: "Invite rejected")
-            }
-        }
-    }
-
-    suspend fun requestInvite(message: String = "") {
+    private suspend fun autoLogin() {
+        _gate.value = GateState.Checking
         val deviceKey = ServiceLocator.deviceKey
-        prefsRepo.requestInvite(deviceKey = deviceKey, message = message)
+        runCatching {
+            prefsRepo.deviceLoginAndPersist(deviceKey)
+        }.onSuccess {
+            _gate.value = GateState.Ready
+        }.onFailure { t ->
+            _gate.value = GateState.Error(t.message ?: "Could not connect to server")
+        }
+    }
+
+    fun retryGate() {
+        viewModelScope.launch { bootstrapGate() }
     }
 
     fun setSystemMessage(message: String) {
@@ -138,6 +145,21 @@ class VoiceAgentViewModel(
 
     fun onTtsAudioLevel(level: Float) {
         _ttsLevel.value = level
+    }
+
+    /** Compute a 0..1 energy from a mic PCM frame and update [micLevel]. */
+    private fun updateMicLevel(pcm: ShortArray) {
+        if (pcm.isEmpty()) return
+        var sumSq = 0.0
+        for (s in pcm) {
+            val v = s.toDouble()
+            sumSq += v * v
+        }
+        val rms = sqrt(sumSq / pcm.size) / 32768.0
+        // Boost so normal speech lands in the upper range, then clamp.
+        val scaled = (rms * 6.0).coerceIn(0.0, 1.0).toFloat()
+        // Fast attack, gentle release so the orbs keep some energy between words.
+        _micLevel.value = max(scaled, _micLevel.value * 0.82f)
     }
 
     fun toggleVisualizer() {
@@ -208,6 +230,8 @@ class VoiceAgentViewModel(
 
             Log.i(TAG, "Claude ⇢ sending: ${text.take(80)} (${history.size} history msgs)")
 
+            latency.markRequestSent()
+
             llm.sendUserText(
                 text = text,
                 history = history,
@@ -217,6 +241,7 @@ class VoiceAgentViewModel(
                     is LlmClient.Event.TextDelta -> {
                         val delta = ev.text
                         if (delta.isNotEmpty()) {
+                            latency.markFirstToken()
                             _ui.update { st ->
                                 st.copy(
                                     isThinking = true,
@@ -319,7 +344,10 @@ class VoiceAgentViewModel(
             // ---- Start mic AFTER collectors are live ----
             if (!micStarted) {
                 runCatching {
-                    audio.start { pcm -> flux.sendPcm(pcm) }
+                    audio.start { pcm ->
+                        flux.sendPcm(pcm)
+                        updateMicLevel(pcm)
+                    }
                 }.onSuccess {
                     micStarted = true
                     Log.i(TAG, "Mic started → streaming PCM to Flux")
@@ -342,6 +370,8 @@ class VoiceAgentViewModel(
             )
         }
         _ttsLevel.value = 0f
+        _micLevel.value = 0f
+        latency.reset()
         runCatching { ServiceLocator.tts.stop() }
         runCatching { llm.close() }
         runCatching { flux.close() }

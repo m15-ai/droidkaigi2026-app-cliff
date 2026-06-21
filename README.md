@@ -2,10 +2,6 @@
 
 Cliff is an open-source Android voice assistant that delivers natural, real-time conversations powered by Claude and Deepgram. It features streaming speech-to-text, streaming LLM responses, streaming text-to-speech, and full barge-in (interruption) support — so conversations feel fluid and human.
 
-## Demo
-
-https://github.com/m15-ai/Cliff/releases/download/v0.1/Cliff-demo.mp4
-
 ## How It Works
 
 ```
@@ -17,7 +13,7 @@ Mic → Deepgram Flux STT (WebSocket) → Claude Sonnet (SSE streaming) → Deep
 
 1. **You speak** — mic captures 16kHz PCM with hardware echo cancellation
 2. **Deepgram Flux** transcribes in real-time via WebSocket with turn detection
-3. **Claude Sonnet 4** generates a response via SSE streaming (text deltas arrive incrementally)
+3. **Claude Sonnet 4.6** generates a response via SSE streaming (text deltas arrive incrementally)
 4. **Deepgram Aura-2** synthesizes speech from those deltas *as they arrive* — no waiting for the full response
 5. **You interrupt** — the barge-in controller detects overlapping speech, cancels the in-flight Claude response, and squelches TTS playback instantly
 
@@ -30,7 +26,8 @@ The result: the bot starts speaking before it's done "thinking", and you can cut
 - **Conversation history** — full multi-turn context sent to Claude, persisted locally via Room DB
 - **Customizable personality** — configurable system prompt, mood, and personality settings
 - **Smart audio routing** — automatic speaker/headset/Bluetooth detection and switching
-- **Real-time visualizer** — RMS-based audio level display at ~30fps
+- **Audio orb visualizer** — layered, additively-blended orange orbs that orbit, breathe, and accelerate with voice energy (see [Audio Orb Visualizer](#audio-orb-visualizer))
+- **Latency readout** — live time-to-first-token (TTFT) overlay so you can feel how the pipeline is performing
 - **Secure token management** — API keys minted server-side with short TTLs, never stored long-term on device
 
 ## Architecture
@@ -40,7 +37,7 @@ The result: the bot starts speaking before it's done "thinking", and you can cut
 | UI | Jetpack Compose + Material 3 |
 | State | Kotlin Coroutines + Flow, MVVM |
 | STT | Deepgram Flux (`flux-general-en`) via WebSocket |
-| LLM | Claude Sonnet 4 via Anthropic Messages API (SSE) |
+| LLM | Claude Sonnet 4.6 (`claude-sonnet-4-6`) via Anthropic Messages API (SSE) |
 | TTS | Deepgram Aura-2 (`aura-2-arcas-en`) via WebSocket |
 | Audio | Android AudioRecord (capture) + AudioTrack (playback) |
 | Storage | Room DB for conversations, SharedPreferences for settings |
@@ -85,35 +82,78 @@ Most voice assistant demos hardcode API keys in the app — anyone who decompile
 - **Devices can be revoked instantly** server-side, no app update needed
 - **Zero user friction** — no signup, no email, no password
 
-**Device identity** uses Android's `Settings.Secure.ANDROID_ID` — a per-app, per-device ID generated automatically by Android. It's not personally identifiable and resets on factory reset. It's used to authenticate with the backend and request tokens.
+**Device identity** uses Android's `Settings.Secure.ANDROID_ID` — a per-app, per-device ID generated automatically by Android. It's not personally identifiable and resets on factory reset.
 
-**Invite gating** (optional) lets you control who gets access. Devices redeem an invite code once, then authenticate freely. You can remove this if you're running your own open instance.
+**Startup gate.** On launch, the app checks SharedPreferences for a cached bearer token. If one exists, the app goes to `Ready` immediately and re-validates in the background. If not, it calls `POST /device-login` automatically — no user interaction required. On success the token is cached and the app proceeds; on failure a connection error is shown. The bearer token is then used to mint short-lived Deepgram and Claude credentials at session start.
 
 ## Backend Requirements
 
-Cliff is a client-only app. It expects a backend server that provides these authenticated endpoints:
+Cliff is a client-only app. It expects a backend server that provides the
+authenticated endpoints below, all served under a secret base path
+(`/api/{secret_path}`). All request and response bodies are JSON.
 
-| Endpoint | Purpose |
-|----------|---------|
-| `POST /api/{secret_path}/claim-invite` | Redeem an invite code |
-| `POST /api/{secret_path}/device-login` | Authenticate a device, returns bearer token |
-| `GET/PUT /api/{secret_path}/prefs` | Read/write user preferences |
-| `POST /api/{secret_path}/deepgram/token` | Mint a short-lived Deepgram access token |
-| `POST /api/{secret_path}/claude/api-key` | Mint a short-lived Claude API key |
+The app-key header (`X-Cliff-App-Key`) is sent on `device-login`, `claude/api-key`,
+and `deepgram/token`. Its value comes from the `CLIFF_APP_KEY` build config and
+must match the server.
+
+> ⚠️ **`/device-login` must issue a bearer token to _any_ device that calls it — there is no device allow-list.** Returning `403 {"detail":"Device not allowed"}` leaves new devices stuck at the startup gate (the app has no cached token to fall back on). Device enrollment is open by default; revocation, if needed, is a separate server-side policy concern.
+
+### `POST /api/{secret_path}/device-login`
+
+Authenticate a device and return a long-lived bearer token (cached on-device,
+used to mint all other credentials).
+
+- **Headers:** `Content-Type: application/json`, `X-Cliff-App-Key: {app_key}`
+- **Request:** `{ "deviceKey": "<Android ANDROID_ID>" }`
+- **Response 200:** `{ "token": "<bearer token>" }`
+- **Must not** reject unknown devices (see warning above).
+
+### `GET /api/{secret_path}/prefs`
+
+Read the device's saved preferences.
+
+- **Headers:** `Authorization: Bearer {token}`
+- **Response 200:** `{ "mood": "...", "personality": "...", "customPrompt": "...", "deviceKey": "...", "updatedAt": <epochMillis> }`
+
+### `PUT /api/{secret_path}/prefs`
+
+Write the device's preferences.
+
+- **Headers:** `Authorization: Bearer {token}`, `Content-Type: application/json`
+- **Request:** `{ "mood": "...", "personality": "...", "customPrompt": "..." }`
+- **Response 200:** same `PrefsDto` shape as `GET /prefs`
+
+### `POST /api/{secret_path}/claude/api-key`
+
+Mint a Claude API key for the Anthropic Messages API.
+
+- **Headers:** `Authorization: Bearer {token}`, `X-Cliff-App-Key: {app_key}`, `Content-Type: application/json`
+- **Request:** `{}`
+- **Response 200:** `{ "api_key": "sk-ant-...", "expires_in": 600 }` (`expires_in` optional, seconds; client defaults to 600)
+- Return `401`/`403` if the token is invalid — the client clears its token and re-runs `device-login`.
+
+### `POST /api/{secret_path}/deepgram/token`
+
+Mint a short-lived Deepgram access token (used for both Flux STT and Aura-2 TTS).
+
+- **Headers:** `Authorization: Bearer {token}`, `X-Cliff-App-Key: {app_key}`
+- **Request:** `{ "ttlSeconds": 600 }`
+- **Response 200:** `{ "access_token": "...", "expires_in": 600 }` (`expires_in` optional, seconds)
+- Return `401`/`403` if the token is invalid — the client clears its token and retries once.
 
 A reference implementation is included in the [`server/`](server/) directory — a FastAPI + SQLite server you can deploy in minutes. See [`server/README.md`](server/README.md) for setup instructions.
 
 The backend is responsible for:
 - Holding your Deepgram and Anthropic API keys securely
-- Issuing short-lived tokens to authenticated devices
-- Managing invite codes and device authorization
+- Issuing a bearer token to any device that calls `/device-login`
+- Minting short-lived Deepgram and Claude credentials on demand
 
 ## Project Structure
 
 ```
 app/src/main/java/com/m15/cliff/
-├── MainActivity.kt              # Entry point, navigation
-├── VoiceAgentViewModel.kt       # Main orchestrator
+├── MainActivity.kt              # Entry point, navigation, gate routing
+├── VoiceAgentViewModel.kt       # Main orchestrator, startup gate
 ├── BargeInController.kt         # Interruption detection
 ├── ServiceLocator.kt            # Dependency injection
 ├── audio/
@@ -132,7 +172,10 @@ app/src/main/java/com/m15/cliff/
 ├── data/
 │   ├── AppDatabase.kt           # Room DB
 │   └── ConversationRepository.kt
+├── util/
+│   └── LatencyTracker.kt        # Time-to-first-token (TTFT) measurement
 └── ui/
+    ├── AudioBlobVisualizer.kt   # Reactive orange-orb audio visualizer
     └── ...                       # Compose screens
 ```
 
@@ -140,7 +183,7 @@ app/src/main/java/com/m15/cliff/
 
 - **Kotlin** + Jetpack Compose + Coroutines/Flow
 - **Deepgram** — Flux (STT) + Aura-2 (TTS) via WebSocket
-- **Anthropic Claude** — Sonnet 4 via Messages API with SSE streaming
+- **Anthropic Claude** — Sonnet 4.6 via Messages API with SSE streaming
 - **Room** — local conversation persistence
 - **OkHttp** — HTTP + WebSocket networking
 
@@ -158,6 +201,38 @@ Key design choices:
 - **Offer to elaborate** — instead of dumping a wall of text, the assistant asks if you want more, which plays to the barge-in model (you can just say "yes" or cut it off)
 
 The system message is user-customizable at runtime via the app's settings screen, so you can tune the personality and response style to your preference.
+
+## Latency Readout (TTFT)
+
+Cliff shows a live **time-to-first-token (TTFT)** readout at the top of the conversation window — `TTFT 842 ms` — so you get an immediate feel for how the STT → LLM → TTS pipeline is performing.
+
+TTFT measures the elapsed time from when your final transcript is dispatched to Claude until the first response token streams back. It's the dominant, user-perceptible slice of pipeline latency — the gap between you finishing your sentence and the assistant starting to "think out loud." The value refreshes on every turn and is shown over both the audio visualizer and the text/chat view.
+
+```
+You stop speaking ──▶ final transcript sent to Claude ──▶ first token arrives
+                      └──────────────── TTFT ────────────────┘
+```
+
+The measurement lives in `util/LatencyTracker.kt`, instrumented at two points in `VoiceAgentViewModel`: when the request is dispatched and when the first streamed `TextDelta` arrives.
+
+## Audio Orb Visualizer
+
+The home screen's centerpiece is a reactive orb — a stack of soft, translucent orange "blobs" that drift, breathe, and swirl in response to the conversation. It's a single Jetpack Compose `Canvas` in [`ui/AudioBlobVisualizer.kt`](app/src/main/java/com/m15/cliff/ui/AudioBlobVisualizer.kt), drawn entirely in code — no images, no shader assets.
+
+**Layered, additively-blended orbs.** Seven orbs are rendered in a warm amber/bronze palette (Burnt Orange and Bronze form the deep base; Bright Orange, Amber, Buff, Apricot, and Bisque float on top as highlights). Each is filled with a radial gradient and composited with `BlendMode.Plus` over the black background, so wherever orbs overlap they *brighten* and the shades mix toward gold — giving the soft, glowing, lava-lamp look. Edges use only low harmonics (gentle rounded lobes), so the shape stays organic rather than spiky.
+
+**It reacts to both voices.** The visualizer is driven by `max(ttsLevel, micLevel)`:
+- `ttsLevel` comes from the Deepgram Aura-2 playback stream (the assistant's voice).
+- `micLevel` is the RMS energy of the captured mic PCM, computed per ~20 ms frame in `VoiceAgentViewModel` — so the orb comes alive while **you** speak, not only during TTS.
+
+Both feed a fast-attack / slow-release envelope so peaks pop instantly and then settle, keeping the motion snappy but never jittery.
+
+**Amplitude maps to motion** in three ways, so louder audio reads as more energy:
+- **Orbit speed** — the orbit angle is *integrated* per frame (`withFrameNanos`) at `revPerSec = 0.05 + 0.6 × level`, so the orbs revolve ~0.05 rev/s at idle and spin up to ~0.5 rev/s when loud. Integrating (rather than scaling a fixed phase) keeps speed changes smooth — louder just accelerates the swirl, it never jumps positions.
+- **Breathing** — the whole stack's radius grows with `level²`.
+- **Spread** — orbs push apart as it gets louder, so the colored fringes separate into distinct bands, then converge back into one warm core when quiet.
+
+The net effect: silence is a slow, lazy drift; speech — yours or the assistant's — accelerates it into a bright, blended swirl that spins back down as the voice trails off.
 
 ## Conversation History: Stateless vs. Stateful
 
@@ -182,18 +257,6 @@ Cliff + Claude:    Full History + New Message → [Stateless HTTP] → Streamed 
 **The tradeoff** is bandwidth — resending full history means larger payloads as conversations grow. For voice conversations (which tend to be short, natural exchanges), this is negligible. For very long sessions, you'd want to implement history truncation or summarization.
 
 The local Room database persists all conversations across app restarts, so the user never loses context even though every Claude request starts fresh.
-
-## OpenClaw Integration
-
-[OpenClaw](https://github.com/openclaw/openclaw) is a self-hosted AI assistant control plane that connects messaging platforms, devices, and agent runtimes through a local WebSocket gateway. It already includes an Android node with voice support, but uses ElevenLabs + system TTS.
-
-Cliff's streaming voice pipeline (Deepgram Flux STT with turn detection + Aura-2 TTS with delta streaming + barge-in) could serve as a high-quality voice interface for OpenClaw on Android. The integration path:
-
-- **OpenClaw's gateway** exposes a WebSocket RPC at `ws://127.0.0.1:18789` with session and tool-streaming APIs
-- **Cliff could connect as a client node**, sending transcribed user speech to OpenClaw and streaming agent responses back through the Deepgram TTS pipeline
-- This would give OpenClaw users real-time voice conversations with full interruption support, while OpenClaw handles agent orchestration, tool execution, and multi-device coordination
-
-This integration is not yet implemented — contributions welcome. The main work would be adding an OpenClaw gateway client alongside the existing Claude streaming client, routing transcribed text through OpenClaw's session API instead of directly to Claude.
 
 ## License
 

@@ -25,7 +25,7 @@ class ClaudeStreamingClient(
     private val okHttp: OkHttpClient = OkHttpClient.Builder()
         .readTimeout(java.time.Duration.ofMinutes(2))
         .build(),
-    private val model: String = "claude-sonnet-4-20250514",
+    private val model: String = "claude-sonnet-4-6",
     private val prefsRepo: PrefsRepository,
     private val deviceKey: String,
 ) : LlmClient {

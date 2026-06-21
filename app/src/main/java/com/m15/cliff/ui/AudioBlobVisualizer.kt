@@ -7,10 +7,50 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.unit.dp
 import kotlin.math.*
 import androidx.compose.material3.MaterialTheme
+
+// Orange palette — warm amber/bronze family. Overlapping translucent orbs in
+// these shades blend additively into a soft, glowing, lava-lamp-like core.
+private val Amber = Color(0xFFFFBF00)
+private val Apricot = Color(0xFFFBCEB1)
+private val Bisque = Color(0xFFF2D2BD)
+private val BrightOrange = Color(0xFFFFAC1C)
+private val Bronze = Color(0xFFCD7F32)
+private val Buff = Color(0xFFDAA06D)
+private val BurntOrange = Color(0xFFCC5500)
+
+/**
+ * One soft orb in the stack.
+ *
+ * @param color        shade from the orange palette
+ * @param radiusFactor size relative to the base radius
+ * @param orbitFactor  how far it drifts from the shared center, relative to base radius
+ * @param orbitSpeed   angular speed multiplier for its slow drift
+ * @param orbitPhase   starting angle offset so orbs don't bunch up
+ * @param wobbleSeed   phase offset for the gentle edge wobble
+ * @param alpha        peak opacity of its core
+ */
+private data class Orb(
+    val color: Color,
+    val radiusFactor: Float,
+    val orbitFactor: Float,
+    val orbitSpeed: Float,
+    val orbitPhase: Float,
+    val wobbleSeed: Float,
+    val alpha: Float,
+)
+
+// Deeper shades form the base mass; brighter ones float on top as highlights.
+private val ORBS = listOf(
+    Orb(BurntOrange, radiusFactor = 1.18f, orbitFactor = 0.10f, orbitSpeed = 0.6f, orbitPhase = 0.0f, wobbleSeed = 0.0f, alpha = 0.42f),
+    Orb(Bronze, radiusFactor = 1.02f, orbitFactor = 0.20f, orbitSpeed = -0.9f, orbitPhase = 1.1f, wobbleSeed = 1.7f, alpha = 0.40f),
+    Orb(Buff, radiusFactor = 0.88f, orbitFactor = 0.30f, orbitSpeed = 1.2f, orbitPhase = 2.4f, wobbleSeed = 3.0f, alpha = 0.36f),
+    Orb(BrightOrange, radiusFactor = 0.80f, orbitFactor = 0.26f, orbitSpeed = -1.5f, orbitPhase = 3.7f, wobbleSeed = 4.2f, alpha = 0.40f),
+    Orb(Amber, radiusFactor = 0.66f, orbitFactor = 0.34f, orbitSpeed = 1.8f, orbitPhase = 4.9f, wobbleSeed = 5.5f, alpha = 0.38f),
+    Orb(Apricot, radiusFactor = 0.52f, orbitFactor = 0.40f, orbitSpeed = -2.2f, orbitPhase = 0.6f, wobbleSeed = 6.1f, alpha = 0.34f),
+    Orb(Bisque, radiusFactor = 0.44f, orbitFactor = 0.46f, orbitSpeed = 2.6f, orbitPhase = 5.8f, wobbleSeed = 2.3f, alpha = 0.30f),
+)
 
 @Composable
 fun AudioBlobVisualizer(
@@ -21,19 +61,41 @@ fun AudioBlobVisualizer(
 ) {
     var heldPeak by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(level) {
-        heldPeak = max(level, heldPeak * 0.92f)
+        // Fast attack, slow-ish release so peaks pop then settle.
+        heldPeak = max(level, heldPeak * 0.88f)
     }
+    // Snappy: bias hard toward the live level, very short tween for an almost
+    // instantaneous attack while still smoothing out per-frame jitter.
     val smooth by animateFloatAsState(
-        targetValue = (level * 0.75f + heldPeak * 0.25f).coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = 35, easing = LinearEasing)
+        targetValue = (level * 0.88f + heldPeak * 0.12f).coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 16, easing = LinearEasing),
+        label = "smoothLevel"
     )
+
+    // Orbit angle is integrated over time at an amplitude-dependent rate, so the
+    // orbs revolve faster as the voice gets louder while speed changes stay
+    // smooth (no position jumps). Idle ≈ 0.05 rev/s, loud ≈ 0.5 rev/s.
+    var spin by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        var last = 0L
+        while (true) {
+            withFrameNanos { now ->
+                if (last != 0L) {
+                    val dt = ((now - last) / 1_000_000_000.0).toFloat()
+                    val revPerSec = 0.05f + 0.6f * smooth
+                    spin += dt * revPerSec * 2f * PI.toFloat()
+                }
+                last = now
+            }
+        }
+    }
 
     val t = rememberInfiniteTransition(label = "blobTime")
     val phase by t.animateFloat(
         initialValue = 0f,
         targetValue = 2f * PI.toFloat(),
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 4200, easing = LinearEasing),
+            animation = tween(durationMillis = 9000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "phase"
@@ -42,7 +104,7 @@ fun AudioBlobVisualizer(
         initialValue = 0.6f,
         targetValue = 1.0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 1100, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "shimmer"
@@ -54,73 +116,55 @@ fun AudioBlobVisualizer(
         val center = Offset(cx, cy)
 
         val minDim = size.minDimension
-        val baseR = minDim * 0.286f
-        val punch = (smooth * smooth)
-        val r = baseR * (1f + 1.15f * punch)
+        val baseR = minDim * 0.255f
+        val punch = smooth * smooth
+        // The whole stack breathes with the audio; orbs also spread apart a
+        // little when loud so the colored fringes separate and read distinctly.
+        val r = baseR * (1f + 0.85f * punch)
+        val spread = 1f + 0.55f * smooth
 
-        // Subtle background mist
-        drawMist(center, minDim, accent, accent2, shimmer)
+        // Warm ambient haze behind everything.
+        drawHaze(center, minDim, shimmer)
 
-        // Glow core
+        // Overlapping orbs, additively blended so where they cross they brighten
+        // and the orange shades mix toward amber/gold.
+        for (orb in ORBS) {
+            drawOrb(
+                base = center,
+                baseRadius = r,
+                spin = spin,
+                phase = phase,
+                level = smooth,
+                spread = spread,
+                shimmer = shimmer,
+                orb = orb
+            )
+        }
+
+        // Faint accent bloom at the very center to tie the stack together.
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
-                    accent.copy(alpha = 0.20f + 0.20f * punch),
-                    accent2.copy(alpha = 0.08f + 0.12f * punch),
+                    accent.copy(alpha = 0.06f + 0.10f * punch),
                     Color.Transparent
                 ),
                 center = center,
-                radius = r * 2.1f
+                radius = r * 0.9f
             ),
-            radius = r * 2.1f,
-            center = center
-        )
-
-        // 3-layer blob
-        drawBlobLayer(
+            radius = r * 0.9f,
             center = center,
-            radius = r * 1.00f,
-            phase = phase,
-            level = smooth,
-            colorA = accent,
-            colorB = accent2,
-            strokeWidth = minDim * (0.010f + 0.008f * punch),
-            alpha = 0.85f
+            blendMode = BlendMode.Plus
         )
-
-        drawBlobFill(
-            center = center,
-            radius = r * 0.86f,
-            phase = phase + 0.9f,
-            level = smooth,
-            colorA = accent2,
-            colorB = accent,
-            alpha = 0.22f + 0.18f * punch
-        )
-
-        drawHighlightRing(
-            center = center,
-            radius = r * 1.06f,
-            phase = phase + 1.7f,
-            level = smooth,
-            color = Color.White.copy(alpha = 0.10f + 0.12f * punch),
-            strokeWidth = minDim * 0.0065f
-        )
-
-        // Sparks on louder moments
-        if (smooth > 0.28f) {
-            drawSparks(center, r, phase, smooth, accent2)
-        }
     }
 }
 
-private fun DrawScope.drawMist(center: Offset, minDim: Float, a: Color, b: Color, shimmer: Float) {
-    val fogR = minDim * 0.62f
+private fun DrawScope.drawHaze(center: Offset, minDim: Float, shimmer: Float) {
+    val fogR = minDim * 0.66f
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
-                a.copy(alpha = 0.04f * shimmer),
-                b.copy(alpha = 0.03f * shimmer),
+                BurntOrange.copy(alpha = 0.07f * shimmer),
+                Bronze.copy(alpha = 0.04f * shimmer),
                 Color.Transparent
             ),
             center = center,
@@ -131,136 +175,70 @@ private fun DrawScope.drawMist(center: Offset, minDim: Float, a: Color, b: Color
     )
 }
 
-private fun DrawScope.drawBlobLayer(
-    center: Offset,
-    radius: Float,
+private fun DrawScope.drawOrb(
+    base: Offset,
+    baseRadius: Float,
+    spin: Float,
     phase: Float,
     level: Float,
-    colorA: Color,
-    colorB: Color,
-    strokeWidth: Float,
-    alpha: Float
+    spread: Float,
+    shimmer: Float,
+    orb: Orb,
 ) {
-    val path = blobPath(center, radius, phase, level, points = 140, wobbleStrength = 0.10f + 0.22f * level)
-
-    drawPath(
-        path = path,
-        brush = Brush.linearGradient(
-            colors = listOf(
-                colorA.copy(alpha = alpha),
-                colorB.copy(alpha = alpha),
-                colorA.copy(alpha = alpha)
-            ),
-            start = Offset(center.x - radius * 1.6f, center.y - radius * 1.2f),
-            end = Offset(center.x + radius * 1.6f, center.y + radius * 1.2f)
-        ),
-        style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    val angle = spin * orb.orbitSpeed + orb.orbitPhase
+    val drift = baseRadius * orb.orbitFactor * spread
+    val c = Offset(
+        base.x + drift * cos(angle),
+        base.y + drift * sin(angle)
     )
 
-    drawPath(
-        path = path,
-        color = colorA.copy(alpha = 0.12f + 0.10f * level),
-        style = Stroke(width = strokeWidth * 2.3f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-    )
-}
+    val radius = baseRadius * orb.radiusFactor
+    // Gentle, rounded wobble — soft organic edge, no spikes.
+    val path = orbPath(c, radius, phase, orb.wobbleSeed, level)
 
-private fun DrawScope.drawBlobFill(
-    center: Offset,
-    radius: Float,
-    phase: Float,
-    level: Float,
-    colorA: Color,
-    colorB: Color,
-    alpha: Float
-) {
-    val path = blobPath(center, radius, phase, level, points = 120, wobbleStrength = 0.06f + 0.18f * level)
+    val coreAlpha = orb.alpha * (0.6f + 0.4f * shimmer)
     drawPath(
         path = path,
         brush = Brush.radialGradient(
             colors = listOf(
-                colorA.copy(alpha = alpha),
-                colorB.copy(alpha = alpha * 0.75f),
+                orb.color.copy(alpha = coreAlpha),
+                orb.color.copy(alpha = coreAlpha * 0.55f),
                 Color.Transparent
             ),
-            center = center,
-            radius = radius * 1.8f
-        )
+            center = c,
+            radius = radius * 1.35f
+        ),
+        blendMode = BlendMode.Plus
     )
 }
 
-private fun DrawScope.drawHighlightRing(
+private fun orbPath(
     center: Offset,
     radius: Float,
     phase: Float,
+    seed: Float,
     level: Float,
-    color: Color,
-    strokeWidth: Float
-) {
-    val path = blobPath(center, radius, phase, level, points = 110, wobbleStrength = 0.03f + 0.09f * level)
-    drawPath(
-        path = path,
-        color = color,
-        style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
-    )
-}
-
-private fun blobPath(
-    center: Offset,
-    radius: Float,
-    phase: Float,
-    level: Float,
-    points: Int,
-    wobbleStrength: Float
 ): Path {
     val path = Path()
     val cx = center.x
     val cy = center.y
+    val points = 96
 
-    val k1 = 3.0f
-    val k2 = 5.0f
-    val k3 = 7.0f
+    // Only low harmonics → smooth, slow lobes. Wobble grows modestly with level.
+    val k1 = 2.0f
+    val k2 = 3.0f
+    val strength = 0.05f + 0.07f * level
 
     for (i in 0..points) {
-        val t = (i / points.toFloat()) * (2f * PI.toFloat())
+        val a = (i / points.toFloat()) * (2f * PI.toFloat())
         val wobble =
-            sin(t * k1 + phase) * 0.55f +
-                    sin(t * k2 - phase * 1.3f) * 0.30f +
-                    sin(t * k3 + phase * 0.7f) * 0.15f
-
-        val rr = radius * (1f + wobbleStrength * wobble * (0.55f + 0.45f * level))
-
-        val x = cx + rr * cos(t)
-        val y = cy + rr * sin(t)
-
+            sin(a * k1 + phase + seed) * 0.65f +
+                sin(a * k2 - phase * 0.7f + seed) * 0.35f
+        val rr = radius * (1f + strength * wobble)
+        val x = cx + rr * cos(a)
+        val y = cy + rr * sin(a)
         if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
     }
     path.close()
     return path
-}
-
-private fun DrawScope.drawSparks(center: Offset, r: Float, phase: Float, level: Float, color: Color) {
-    val count = (6 + (level * 14)).toInt().coerceAtMost(20)
-    val sparkR = r * (1.05f + 0.55f * level)
-
-    for (i in 0 until count) {
-        val a = phase * 1.8f + i * 0.55f
-        val jitter = 0.12f * sin(phase * 6f + i)
-        val p = Offset(
-            center.x + sparkR * cos(a) * (1f + jitter),
-            center.y + sparkR * sin(a) * (1f + jitter)
-        )
-
-        val len = (r * 0.06f) * (0.6f + level)
-        val q = Offset(
-            p.x + len * cos(a + 0.8f),
-            p.y + len * sin(a + 0.8f)
-        )
-
-        drawLine(
-            color = color.copy(alpha = (0.10f + 0.35f * level).coerceIn(0f, 1f)),
-            start = p,
-            end = q,
-            strokeWidth = (1.2f + 2.8f * level)
-        )
-    }
 }

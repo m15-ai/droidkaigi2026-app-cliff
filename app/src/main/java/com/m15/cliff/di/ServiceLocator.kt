@@ -67,7 +67,7 @@ object ServiceLocator {
 
         llm = ClaudeStreamingClient(
             okHttp = okHttp,
-            model = "claude-sonnet-4-20250514",
+            model = "claude-sonnet-4-6",
             prefsRepo = prefsRepo,
             deviceKey = deviceKey
         )

@@ -10,7 +10,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -20,7 +19,6 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -33,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.border
 import com.m15.cliff.AgentUiState
 
@@ -45,7 +44,8 @@ fun VoiceAgentScreen(
     onDismissSession: () -> Unit,
     onToggleVisualizer: () -> Unit,
     showVisualizer: Boolean,
-    ttsLevel: Float
+    ttsLevel: Float,
+    latencyMs: Long?
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     ui.error?.let { errorMsg ->
@@ -67,33 +67,22 @@ fun VoiceAgentScreen(
         modifier = Modifier.fillMaxSize(),
         containerColor = Color.Black,
         topBar = {
+            // Plain inset-aware header. A CenterAlignedTopAppBar clips its title to a
+            // fixed ~64dp row, which sliced the top off the 36sp "Cliff" glyphs.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(120.dp)
+                    .statusBarsPadding()
+                    .padding(top = 16.dp, bottom = 12.dp),
+                contentAlignment = Alignment.Center
             ) {
-                CenterAlignedTopAppBar(
-                    title = {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 24.dp, bottom = 6.dp)
-                        ) {
-                            Text(
-                                text = "Cliff",
-                                color = Color.White,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 36.sp,
-                                letterSpacing = 1.5.sp,
-                                maxLines = 1
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = Color.Transparent
-                    ),
-                    modifier = Modifier.fillMaxSize()
+                Text(
+                    text = "Cliff",
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 36.sp,
+                    letterSpacing = 1.5.sp,
+                    maxLines = 1
                 )
             }
         },
@@ -158,7 +147,9 @@ fun VoiceAgentScreen(
                     level = ttsLevel,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                        .padding(horizontal = 18.dp, vertical = 12.dp)
+                        // Keep the glow/mist from overflowing upward over the "Cliff" title.
+                        .clipToBounds(),
                     accent = Color.White
                 )
             } else {
@@ -193,6 +184,22 @@ fun VoiceAgentScreen(
                         )
                     }
                 }
+            }
+
+            // Pipeline latency (time to first token), shown over both views
+            latencyMs?.let { ms ->
+                Text(
+                    text = "TTFT $ms ms",
+                    color = Color.White.copy(alpha = 0.55f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.5.sp,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 4.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                )
             }
         }
     }

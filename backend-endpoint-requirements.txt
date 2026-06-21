@@ -42,4 +42,4 @@ Notes
 - If the key is a long-lived Anthropic key (not ephemeral), set expires_in
   to something reasonable like 3600 so the client doesn't call too often
 - The Cliff app calls Claude Messages API directly at
-  https://api.anthropic.com/v1/messages using model claude-sonnet-4-20250514
+  https://api.anthropic.com/v1/messages using model claude-sonnet-4-6

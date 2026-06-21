@@ -60,10 +60,6 @@ class PrefsRepository(
         }
     }
 
-    suspend fun claimInvite(inviteCode: String, deviceKey: String) {
-        api.claimInvite(inviteCode = inviteCode, deviceKey = deviceKey)
-    }
-
     suspend fun deviceLoginAndPersist(deviceKey: String): String {
         val token = api.deviceLogin(deviceKey)
         sp.edit()
@@ -147,11 +143,6 @@ class PrefsRepository(
             claudeKeyExpiryMs = expMs2
             key2
         }
-    }
-
-    // Invite request (pre-auth)
-    suspend fun requestInvite(deviceKey: String, message: String = "") {
-        api.inviteRequest(deviceKey = deviceKey, message = message)
     }
 
     private companion object {

@@ -33,27 +33,6 @@ class PrefsApiClient(
     private fun apiUrl(path: String): String =
         baseUrl.trimEnd('/') + "/api/" + secretPath + path
 
-    suspend fun claimInvite(inviteCode: String, deviceKey: String) {
-        Log.d(
-            "PrefsApiClient",
-            "baseUrl=$baseUrl secret=$secretPath appKey=${appKey.take(4)}… url=${apiUrl("/claim-invite")}"
-        )
-
-        val body = JSONObject()
-            .put("inviteCode", inviteCode)
-            .put("deviceKey", deviceKey)
-            .toString()
-
-        val req = Request.Builder()
-            .url(apiUrl("/claim-invite"))
-            .post(body.toRequestBody(JSON.toMediaType()))
-            .header("Content-Type", JSON)
-            .header("X-Cliff-App-Key", appKey)
-            .build()
-
-        executeOrThrow(req)
-    }
-
     suspend fun deviceLogin(deviceKey: String): String {
         val body = JSONObject()
             .put("deviceKey", deviceKey)
@@ -186,27 +165,6 @@ class PrefsApiClient(
             accessToken = o.getString("access_token"),
             expiresIn = if (o.has("expires_in")) o.optInt("expires_in") else null
         )
-    }
-
-    // -------------------------
-    // NEW: Invite request
-    // -------------------------
-
-    suspend fun inviteRequest(deviceKey: String, message: String) {
-        val body = JSONObject()
-            .put("deviceKey", deviceKey)
-            .put("message", message)
-            .toString()
-
-        val req = Request.Builder()
-            .url(apiUrl("/invite-request"))
-            .post(body.toRequestBody(JSON.toMediaType()))
-            .header("Content-Type", JSON)
-            .header("X-Cliff-App-Key", appKey)
-            .build()
-
-        // server returns {"ok": true} – we don’t need the body for now
-        executeOrThrow(req)
     }
 
     private companion object {

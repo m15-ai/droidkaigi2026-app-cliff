@@ -10,6 +10,7 @@
 .DS_Store
 .idea/
 .kotlin/
+.claude/
 SOCIAL_MEDIA_DRAFTS.md
 *.mp4
 sam_server.py

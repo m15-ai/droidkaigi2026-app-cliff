@@ -155,7 +155,8 @@ app/src/main/java/com/m15/cliff/
 ├── MainActivity.kt              # Entry point, navigation, gate routing
 ├── VoiceAgentViewModel.kt       # Main orchestrator, startup gate
 ├── BargeInController.kt         # Interruption detection
-├── ServiceLocator.kt            # Dependency injection
+├── di/
+│   └── ServiceLocator.kt        # Dependency injection
 ├── audio/
 │   └── AudioCapture.kt          # Mic input (16kHz PCM)
 ├── net/
@@ -163,15 +164,18 @@ app/src/main/java/com/m15/cliff/
 │   ├── claude/
 │   │   └── ClaudeStreamingClient.kt  # Anthropic Messages API (SSE)
 │   └── flux/
-│       └── FluxClientImpl.kt    # Deepgram Flux STT (WebSocket)
+│       ├── FluxClientImpl.kt    # Deepgram Flux STT (WebSocket)
+│       └── PromptDictationController.kt
 ├── tts/
 │   └── DeepgramTtsClient.kt     # Deepgram Aura-2 TTS (WebSocket)
 ├── prefs/
 │   ├── PrefsApiClient.kt        # Backend HTTP client
 │   └── PrefsRepository.kt       # Token caching & auth lifecycle
 ├── data/
-│   ├── AppDatabase.kt           # Room DB
-│   └── ConversationRepository.kt
+│   ├── db/
+│   │   └── AppDatabase.kt       # Room DB (+ dao/, model/)
+│   └── repo/
+│       └── ConversationRepository.kt
 ├── util/
 │   └── LatencyTracker.kt        # Time-to-first-token (TTFT) measurement
 └── ui/
@@ -217,7 +221,7 @@ The measurement lives in `util/LatencyTracker.kt`, instrumented at two points in
 
 ## Audio Orb Visualizer
 
-The home screen's centerpiece is a reactive orb — a stack of soft, translucent orange "blobs" that drift, breathe, and swirl in response to the conversation. It's a single Jetpack Compose `Canvas` in [`ui/AudioBlobVisualizer.kt`](app/src/main/java/com/m15/cliff/ui/AudioBlobVisualizer.kt), drawn entirely in code — no images, no shader assets.
+A session opens on the text/chat view by default; tapping the visualizer FAB swaps in a reactive orb — a stack of soft, translucent orange "blobs" that drift, breathe, and swirl in response to the conversation. It's a single Jetpack Compose `Canvas` in [`ui/AudioBlobVisualizer.kt`](app/src/main/java/com/m15/cliff/ui/AudioBlobVisualizer.kt), drawn entirely in code — no images, no shader assets.
 
 **Layered, additively-blended orbs.** Seven orbs are rendered in a warm amber/bronze palette (Burnt Orange and Bronze form the deep base; Bright Orange, Amber, Buff, Apricot, and Bisque float on top as highlights). Each is filled with a radial gradient and composited with `BlendMode.Plus` over the black background, so wherever orbs overlap they *brighten* and the shades mix toward gold — giving the soft, glowing, lava-lamp look. Edges use only low harmonics (gentle rounded lobes), so the shape stays organic rather than spiky.
 

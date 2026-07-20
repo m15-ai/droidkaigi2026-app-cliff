@@ -116,7 +116,7 @@ fun AudioBlobVisualizer(
         val center = Offset(cx, cy)
 
         val minDim = size.minDimension
-        val baseR = minDim * 0.255f
+        val baseR = minDim * 0.38f
         val punch = smooth * smooth
         // The whole stack breathes with the audio; orbs also spread apart a
         // little when loud so the colored fringes separate and read distinctly.

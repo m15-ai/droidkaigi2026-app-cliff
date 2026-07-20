@@ -81,7 +81,8 @@ class VoiceAgentViewModel(
     private val _micLevel = MutableStateFlow(0f)
     val micLevel: StateFlow<Float> = _micLevel
 
-    private val _showVisualizer = MutableStateFlow(true)
+    // Default to the text/chat view; the user can tap the visualizer FAB to show the orb.
+    private val _showVisualizer = MutableStateFlow(false)
     val showVisualizer: StateFlow<Boolean> = _showVisualizer
 
     // --- Pipeline latency (time to first token) ---
@@ -286,7 +287,7 @@ class VoiceAgentViewModel(
     fun startSession() {
         if (ui.value.sessionActive) return
 
-        _showVisualizer.value = true
+        _showVisualizer.value = false
 
         audioDeviceCallback = object : AudioDeviceCallback() {
             override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {

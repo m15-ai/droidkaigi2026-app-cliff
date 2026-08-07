@@ -1,6 +1,6 @@
 # Cliff Backend Server
 
-Token-minting backend for the Cliff voice assistant. Keeps your Deepgram and Anthropic API keys server-side and issues short-lived tokens to authenticated Android devices.
+Token-minting backend for the Cliff voice assistant. Keeps your Deepgram and Anthropic API keys server-side and hands short-lived credentials to the app. It is fully stateless — no database, no device enrollment, no user accounts.
 
 ## Quick Start
 
@@ -14,19 +14,17 @@ export CLIFF_APP_KEY="your_app_key"
 export CLIFF_DEEPGRAM_API_KEY="dg-..."
 export CLIFF_ANTHROPIC_API_KEY="sk-ant-..."
 
-# Seed at least one invite (use your device's Android ID)
-export CLIFF_INVITES_JSON='[{"code":"myinvite","deviceKey":"YOUR_ANDROID_ID","label":"My Phone"}]'
-
 uvicorn cliff_server:app --host 0.0.0.0 --port 8000
 ```
 
-## Finding Your Android ID
+## Auth Model
 
-The Cliff app uses `Settings.Secure.ANDROID_ID` as the device key. To find yours:
+Every request is authenticated by two shared secrets that must match the Android app's build config:
 
-1. Enable USB debugging on your phone
-2. Run: `adb shell settings get secure android_id`
-3. Use that value as `deviceKey` in your invite JSON
+1. The **secret path** segment in the URL (`CLIFF_SECRET_PATH`).
+2. The **app key** header `X-Cliff-App-Key` (`CLIFF_APP_KEY`).
+
+There is no device identity, no bearer token, and no server-side state. Any client that presents both secrets can mint credentials, so keep them out of source control and rotate them if leaked.
 
 ## Environment Variables
 
@@ -36,25 +34,27 @@ The Cliff app uses `Settings.Secure.ANDROID_ID` as the device key. To find yours
 | `CLIFF_APP_KEY` | Yes | App key header value (must match `CLIFF_APP_KEY` in the app) |
 | `CLIFF_DEEPGRAM_API_KEY` | Yes | Your Deepgram API key (get one at [deepgram.com](https://deepgram.com)) |
 | `CLIFF_ANTHROPIC_API_KEY` | Yes | Your Anthropic API key (get one at [console.anthropic.com](https://console.anthropic.com)) |
-| `CLIFF_INVITES_JSON` | Yes | JSON array of invite objects (see above) |
-| `CLIFF_DB_PATH` | No | SQLite database path (default: `./cliff.db`) |
-| `CLIFF_DEFAULT_MOOD` | No | Default mood for new users (default: `VENTING`) |
-| `CLIFF_DEFAULT_PERSONALITY` | No | Default personality (default: `NycVentMode`) |
-| `CLIFF_DELETE_OLD_TOKENS` | No | Clean old tokens on login (default: `true`) |
 
 ## API Endpoints
 
-All endpoints are prefixed with `/api/{CLIFF_SECRET_PATH}`.
+All endpoints are prefixed with `/api/{CLIFF_SECRET_PATH}` and require the `X-Cliff-App-Key` header.
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/claim-invite` | App key | One-time invite code redemption |
-| POST | `/device-login` | App key | Device authentication, returns Bearer token |
-| GET | `/prefs` | Bearer | Read user preferences |
-| PUT | `/prefs` | Bearer | Update user preferences |
-| POST | `/deepgram/token` | Bearer + App key | Mint short-lived Deepgram access token |
-| POST | `/claude/api-key` | Bearer + App key | Get Claude API key |
-| POST | `/invite-request` | App key | Request an invite (pre-auth) |
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/deepgram/token` | Mint a short-lived Deepgram access token (STT + TTS) |
+| POST | `/claude/api-key` | Return the Claude API key |
+
+### `POST /api/{secret}/deepgram/token`
+
+- **Request:** `{ "ttlSeconds": 600 }` (clamped server-side to 1..3600)
+- **Response 200:** `{ "access_token": "...", "expires_in": 600 }`
+
+The server exchanges your Deepgram API key for a short-lived access token via Deepgram's `/v1/auth/grant` endpoint, so the raw key never leaves the backend.
+
+### `POST /api/{secret}/claude/api-key`
+
+- **Request:** `{}`
+- **Response 200:** `{ "api_key": "sk-ant-...", "expires_in": 3600 }`
 
 ## Deployment
 

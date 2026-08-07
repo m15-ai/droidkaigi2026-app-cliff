@@ -160,7 +160,12 @@ fun VoiceAgentScreen(
                 ) {
                     LazyColumn(
                         modifier = Modifier.weight(1f),
-                        reverseLayout = true
+                        reverseLayout = true,
+                        // Reserve room for the bottom-right FAB stack (3 × 56dp +
+                        // 2 × 16dp spacing) so the newest messages float above it
+                        // instead of being hidden behind it. With reverseLayout the
+                        // list is bottom-anchored, so this padding lands at the bottom.
+                        contentPadding = PaddingValues(bottom = 208.dp)
                     ) {
                         if (showLiveAssistant) {
                             item { ChatBubble("assistant", ui.assistantLive!!, Color.White) }

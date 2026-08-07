@@ -20,17 +20,15 @@ import okhttp3.OkHttpClient
 class PromptDictationController(
     private val appContext: Context,
     private val prefsRepo: PrefsRepository,
-    private val deviceKey: String,
     okHttp: OkHttpClient = OkHttpClient()
 ) {
     private val tag = "PromptDictation"
 
-    // IMPORTANT: Flux must be constructed with prefsRepo/deviceKey so it can mint Deepgram tokens.
+    // IMPORTANT: Flux must be constructed with prefsRepo so it can mint Deepgram tokens.
     private val flux: FluxClient = FluxClientImpl(
         okHttp = okHttp,
         useMocks = false,
-        prefsRepo = prefsRepo,
-        deviceKey = deviceKey
+        prefsRepo = prefsRepo
     )
 
     private val audio = DefaultAudioCapture(appContext)

@@ -33,8 +33,7 @@ fun CustomPromptScreen(
     val dictation = remember {
         PromptDictationController(
             appContext = context,
-            prefsRepo = ServiceLocator.prefsRepo,
-            deviceKey = ServiceLocator.deviceKey
+            prefsRepo = ServiceLocator.prefsRepo
         )
     }
     DisposableEffect(Unit) {

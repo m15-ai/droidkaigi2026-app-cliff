@@ -36,9 +36,24 @@ interface LlmClient {
     }
 
     companion object {
+        /**
+         * The Japanese instruction here is load-bearing, not cosmetic: the Aura-2
+         * voice is fixed at socket construction (aura-2-fujin-ja) and Flux is
+         * pinned with language_hint=ja, so a reply in any other language would be
+         * handed to a Japanese voice. Editing the language rule out of this prompt
+         * means changing those two settings to match.
+         *
+         * When changing this string, add the previous value to
+         * CliffLocalPrefs.LEGACY_SYSTEM_MESSAGES so existing installs upgrade.
+         */
         const val DEFAULT_SYSTEM_MESSAGE =
             "You are Cliff, a friendly and helpful voice assistant. " +
             "Your name is Cliff, and if someone asks who you are or what you're called, tell them you're Cliff. " +
+            "Always reply in Japanese, regardless of what language the user speaks to you in. " +
+            "Speak naturally and conversationally, in the polite ですます form. " +
+            "Write numbers, dates, and units as Japanese words rather than digits or symbols " +
+            "so they read naturally aloud, and do not mix Latin script into your replies " +
+            "unless quoting a proper noun that has no Japanese form. " +
             "Your responses are spoken aloud via text-to-speech. " +
             "Keep responses short and conversational — 1 to 3 sentences max. " +
             "Never use bullet points, numbered lists, markdown, emojis, or special formatting. " +

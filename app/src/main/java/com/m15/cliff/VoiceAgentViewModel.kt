@@ -97,34 +97,16 @@ class VoiceAgentViewModel(
 
     private fun bootstrapGate() {
         viewModelScope.launch {
-            val deviceKey = ServiceLocator.deviceKey
-            val cached = prefsRepo.getSavedTokenFastOrNull()
-            if (!cached.isNullOrBlank()) {
+            _gate.value = GateState.Checking
+            // Preflight: mint a Deepgram token. This confirms the backend is reachable and
+            // the app key is accepted, and warms the token cache for the first session.
+            runCatching {
+                prefsRepo.getDeepgramAccessToken()
+            }.onSuccess {
                 _gate.value = GateState.Ready
-                launch {
-                    if (prefsRepo.shouldValidateNow()) {
-                        val ok = prefsRepo.ensureValidTokenOrNull(deviceKey) != null
-                        if (!ok) {
-                            if (ui.value.sessionActive) stopSession()
-                            autoLogin()
-                        }
-                    }
-                }
-                return@launch
+            }.onFailure { t ->
+                _gate.value = GateState.Error(t.message ?: "Could not connect to server")
             }
-            autoLogin()
-        }
-    }
-
-    private suspend fun autoLogin() {
-        _gate.value = GateState.Checking
-        val deviceKey = ServiceLocator.deviceKey
-        runCatching {
-            prefsRepo.deviceLoginAndPersist(deviceKey)
-        }.onSuccess {
-            _gate.value = GateState.Ready
-        }.onFailure { t ->
-            _gate.value = GateState.Error(t.message ?: "Could not connect to server")
         }
     }
 

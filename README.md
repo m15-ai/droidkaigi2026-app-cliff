@@ -79,74 +79,44 @@ Most voice assistant demos hardcode API keys in the app — anyone who decompile
 **No API keys on-device.** The app never holds long-lived Deepgram or Anthropic credentials. Instead, a lightweight backend mints short-lived tokens (10-minute TTL) on demand. This means:
 
 - **Keys can't be stolen from the APK** — the app only ever holds ephemeral tokens
-- **Devices can be revoked instantly** server-side, no app update needed
 - **Zero user friction** — no signup, no email, no password
 
-**Device identity** uses Android's `Settings.Secure.ANDROID_ID` — a per-app, per-device ID generated automatically by Android. It's not personally identifiable and resets on factory reset.
+**Two shared secrets.** The app authenticates to the backend with a secret path segment baked into the API URL (`CLIFF_SECRET_PATH`) and an app-key header (`X-Cliff-App-Key` / `CLIFF_APP_KEY`). Both come from the build config and must match the server. There is no device identity, no bearer token, and no server-side state — the contract is stateless.
 
-**Startup gate.** On launch, the app checks SharedPreferences for a cached bearer token. If one exists, the app goes to `Ready` immediately and re-validates in the background. If not, it calls `POST /device-login` automatically — no user interaction required. On success the token is cached and the app proceeds; on failure a connection error is shown. The bearer token is then used to mint short-lived Deepgram and Claude credentials at session start.
+**Startup gate.** On launch, the app mints a Deepgram token as a connectivity preflight. On success it goes to `Ready` (the token is cached and reused for the first session); on failure a connection error is shown with a retry.
 
 ## Backend Requirements
 
-Cliff is a client-only app. It expects a backend server that provides the
-authenticated endpoints below, all served under a secret base path
+Cliff is a client-only app. It expects a backend server that provides the two
+token-minting endpoints below, served under a secret base path
 (`/api/{secret_path}`). All request and response bodies are JSON.
 
-The app-key header (`X-Cliff-App-Key`) is sent on `device-login`, `claude/api-key`,
-and `deepgram/token`. Its value comes from the `CLIFF_APP_KEY` build config and
-must match the server.
-
-> ⚠️ **`/device-login` must issue a bearer token to _any_ device that calls it — there is no device allow-list.** Returning `403 {"detail":"Device not allowed"}` leaves new devices stuck at the startup gate (the app has no cached token to fall back on). Device enrollment is open by default; revocation, if needed, is a separate server-side policy concern.
-
-### `POST /api/{secret_path}/device-login`
-
-Authenticate a device and return a long-lived bearer token (cached on-device,
-used to mint all other credentials).
-
-- **Headers:** `Content-Type: application/json`, `X-Cliff-App-Key: {app_key}`
-- **Request:** `{ "deviceKey": "<Android ANDROID_ID>" }`
-- **Response 200:** `{ "token": "<bearer token>" }`
-- **Must not** reject unknown devices (see warning above).
-
-### `GET /api/{secret_path}/prefs`
-
-Read the device's saved preferences.
-
-- **Headers:** `Authorization: Bearer {token}`
-- **Response 200:** `{ "mood": "...", "personality": "...", "customPrompt": "...", "deviceKey": "...", "updatedAt": <epochMillis> }`
-
-### `PUT /api/{secret_path}/prefs`
-
-Write the device's preferences.
-
-- **Headers:** `Authorization: Bearer {token}`, `Content-Type: application/json`
-- **Request:** `{ "mood": "...", "personality": "...", "customPrompt": "..." }`
-- **Response 200:** same `PrefsDto` shape as `GET /prefs`
-
-### `POST /api/{secret_path}/claude/api-key`
-
-Mint a Claude API key for the Anthropic Messages API.
-
-- **Headers:** `Authorization: Bearer {token}`, `X-Cliff-App-Key: {app_key}`, `Content-Type: application/json`
-- **Request:** `{}`
-- **Response 200:** `{ "api_key": "sk-ant-...", "expires_in": 600 }` (`expires_in` optional, seconds; client defaults to 600)
-- Return `401`/`403` if the token is invalid — the client clears its token and re-runs `device-login`.
+Every request must send the app-key header (`X-Cliff-App-Key`), whose value comes
+from the `CLIFF_APP_KEY` build config and must match the server. Together with the
+secret path segment in the URL, that is the only authentication — there is no device
+identity, no bearer token, and no server-side state.
 
 ### `POST /api/{secret_path}/deepgram/token`
 
 Mint a short-lived Deepgram access token (used for both Flux STT and Aura-2 TTS).
 
-- **Headers:** `Authorization: Bearer {token}`, `X-Cliff-App-Key: {app_key}`
+- **Headers:** `X-Cliff-App-Key: {app_key}`, `Content-Type: application/json`
 - **Request:** `{ "ttlSeconds": 600 }`
-- **Response 200:** `{ "access_token": "...", "expires_in": 600 }` (`expires_in` optional, seconds)
-- Return `401`/`403` if the token is invalid — the client clears its token and retries once.
+- **Response 200:** `{ "access_token": "...", "expires_in": 600 }` (`expires_in` optional, seconds; client defaults to 600)
 
-A reference implementation is included in the [`server/`](server/) directory — a FastAPI + SQLite server you can deploy in minutes. See [`server/README.md`](server/README.md) for setup instructions.
+### `POST /api/{secret_path}/claude/api-key`
+
+Return a Claude API key for the Anthropic Messages API.
+
+- **Headers:** `X-Cliff-App-Key: {app_key}`, `Content-Type: application/json`
+- **Request:** `{}`
+- **Response 200:** `{ "api_key": "sk-ant-...", "expires_in": 3600 }` (`expires_in` optional, seconds; client defaults to 600)
+
+A reference implementation is included in the [`server/`](server/) directory — a stateless FastAPI server you can deploy in minutes. See [`server/README.md`](server/README.md) for setup instructions.
 
 The backend is responsible for:
 - Holding your Deepgram and Anthropic API keys securely
-- Issuing a bearer token to any device that calls `/device-login`
-- Minting short-lived Deepgram and Claude credentials on demand
+- Minting short-lived Deepgram and Claude credentials on demand for any caller that presents the secret path and app key
 
 ## Project Structure
 
@@ -169,8 +139,8 @@ app/src/main/java/com/m15/cliff/
 ├── tts/
 │   └── DeepgramTtsClient.kt     # Deepgram Aura-2 TTS (WebSocket)
 ├── prefs/
-│   ├── PrefsApiClient.kt        # Backend HTTP client
-│   └── PrefsRepository.kt       # Token caching & auth lifecycle
+│   ├── PrefsApiClient.kt        # Backend HTTP client (2 token endpoints)
+│   └── PrefsRepository.kt       # Token minting & in-memory caching
 ├── data/
 │   ├── db/
 │   │   └── AppDatabase.kt       # Room DB (+ dao/, model/)

@@ -1,0 +1,639 @@
+<title>Cliff — Architecture</title>
+<style>
+  :root {
+    color-scheme: light dark;
+
+    /* warm-biased neutrals (faint amber cast, never dead grey) */
+    --bg:        #f7f4ef;
+    --surface:   #ffffff;
+    --surface-2: #f1ece3;
+    --border:    #e3dccf;
+    --ink:       #1f1b16;
+    --ink-2:     #514a40;
+    --ink-3:     #857c6e;
+
+    /* accent — the orb amber */
+    --accent:    #d9772e;
+    --accent-ink:#a8551a;
+    --accent-soft:#f6e4d2;
+
+    /* pipeline stage hues (semantic, not the accent) */
+    --c-audio:   #5b6b7a;
+    --c-stt:     #1f8f9c;
+    --c-orch:    #8a6d3b;
+    --c-llm:     #7b5bd6;
+    --c-tts:     #d9772e;
+
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+    --maxw: 62rem;
+    --radius: 10px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:        #12100d;
+      --surface:   #1b1813;
+      --surface-2: #221e18;
+      --border:    #322c23;
+      --ink:       #f2ede4;
+      --ink-2:     #c3bcae;
+      --ink-3:     #8a8172;
+      --accent:    #f0954a;
+      --accent-ink:#f4ab6d;
+      --accent-soft:#2a2016;
+      --c-audio:   #8aa0b4;
+      --c-stt:     #3bc6d4;
+      --c-orch:    #cba85f;
+      --c-llm:     #a98cf0;
+      --c-tts:     #f0954a;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg:#f7f4ef; --surface:#ffffff; --surface-2:#f1ece3; --border:#e3dccf;
+    --ink:#1f1b16; --ink-2:#514a40; --ink-3:#857c6e;
+    --accent:#d9772e; --accent-ink:#a8551a; --accent-soft:#f6e4d2;
+    --c-audio:#5b6b7a; --c-stt:#1f8f9c; --c-orch:#8a6d3b; --c-llm:#7b5bd6; --c-tts:#d9772e;
+  }
+  :root[data-theme="dark"] {
+    --bg:#12100d; --surface:#1b1813; --surface-2:#221e18; --border:#322c23;
+    --ink:#f2ede4; --ink-2:#c3bcae; --ink-3:#8a8172;
+    --accent:#f0954a; --accent-ink:#f4ab6d; --accent-soft:#2a2016;
+    --c-audio:#8aa0b4; --c-stt:#3bc6d4; --c-orch:#cba85f; --c-llm:#a98cf0; --c-tts:#f0954a;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 1.5rem; }
+
+  code, .mono { font-family: var(--mono); }
+  code {
+    font-size: 0.86em;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 0.08em 0.4em;
+    color: var(--accent-ink);
+    white-space: nowrap;
+  }
+  a { color: var(--accent-ink); }
+
+  /* ---------- Hero ---------- */
+  header.hero {
+    border-bottom: 1px solid var(--border);
+    background:
+      radial-gradient(120% 140% at 85% -20%, var(--accent-soft), transparent 55%),
+      var(--surface);
+  }
+  .hero-inner { padding: 4.2rem 0 3rem; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 1.1rem;
+    display: flex; align-items: center; gap: 0.7rem;
+  }
+  .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  h1 {
+    font-size: clamp(2.6rem, 7vw, 4.4rem);
+    line-height: 0.98;
+    letter-spacing: -0.03em;
+    font-weight: 800;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h1 .accent { color: var(--accent); }
+  .lede {
+    max-width: 40rem;
+    font-size: 1.12rem;
+    color: var(--ink-2);
+    margin: 1.4rem 0 0;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.8rem; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.02em;
+    padding: 0.32rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    background: var(--surface);
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+
+  .note {
+    margin-top: 2rem;
+    border-left: 3px solid var(--accent);
+    background: var(--surface);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 0.9rem 1.1rem;
+    font-size: 0.9rem;
+    color: var(--ink-2);
+  }
+  .note b { color: var(--ink); }
+
+  /* ---------- Sticky nav ---------- */
+  nav.rail {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  nav.rail .wrap { display: flex; gap: 0.25rem; overflow-x: auto; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+  nav.rail a {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.03em;
+    text-decoration: none;
+    color: var(--ink-3);
+    padding: 0.4rem 0.7rem;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  nav.rail a:hover { color: var(--ink); background: var(--surface-2); }
+
+  /* ---------- Sections ---------- */
+  section { padding: 3.4rem 0; border-bottom: 1px solid var(--border); }
+  .sec-head { display: flex; align-items: baseline; gap: 0.9rem; margin-bottom: 1.8rem; }
+  .sec-num { font-family: var(--mono); font-size: 0.8rem; color: var(--accent); letter-spacing: 0.1em; }
+  h2 { font-size: clamp(1.5rem, 3.5vw, 2rem); letter-spacing: -0.02em; margin: 0; font-weight: 750; }
+  .sec-sub { color: var(--ink-2); max-width: 46rem; margin: 0.6rem 0 0; }
+
+  /* ---------- Pipeline diagram ---------- */
+  .pipe { display: flex; flex-direction: column; gap: 0.7rem; }
+  .pipe-flow { display: flex; align-items: stretch; gap: 0.55rem; overflow-x: auto; padding-bottom: 0.4rem; }
+  .stage {
+    flex: 1 0 8.5rem;
+    min-width: 8.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--sc, var(--accent));
+    border-radius: var(--radius);
+    padding: 0.85rem 0.9rem 1rem;
+    position: relative;
+  }
+  .stage .k {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--sc, var(--accent));
+    font-weight: 600;
+  }
+  .stage .t { font-weight: 700; font-size: 0.98rem; margin: 0.3rem 0 0.35rem; letter-spacing: -0.01em; }
+  .stage .d { font-size: 0.8rem; color: var(--ink-2); line-height: 1.45; }
+  .stage .arrow {
+    position: absolute; right: -0.55rem; top: 50%; transform: translateY(-50%);
+    color: var(--ink-3); font-size: 1rem; z-index: 2;
+  }
+  .stage:last-child .arrow { display: none; }
+
+  .bargein {
+    margin-top: 0.4rem;
+    display: flex; gap: 0.8rem; align-items: flex-start;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 0.9rem 1.05rem;
+  }
+  .bargein .tag {
+    font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; white-space: nowrap; padding-top: 0.1rem;
+  }
+  .bargein p { margin: 0; font-size: 0.87rem; color: var(--ink-2); }
+  .bargein b { color: var(--ink); }
+
+  /* ---------- Generic cards / grid ---------- */
+  .grid { display: grid; gap: 0.9rem; }
+  .g2 { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+  .g3 { grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.2rem;
+  }
+  .card h3 { margin: 0 0 0.5rem; font-size: 0.98rem; letter-spacing: -0.01em; display: flex; align-items: center; gap: 0.5rem; }
+  .card h3 .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .card p { margin: 0; font-size: 0.87rem; color: var(--ink-2); }
+  .card .files { margin: 0.7rem 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .card .files li { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-3); background: var(--surface-2); border-radius: 5px; padding: 0.12rem 0.42rem; }
+
+  /* ---------- Tables ---------- */
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+  th, td { text-align: left; padding: 0.7rem 0.95rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; background: var(--surface-2); }
+  tr:last-child td { border-bottom: none; }
+  td.mono, th.mono { font-family: var(--mono); }
+  td .method { font-family: var(--mono); font-weight: 700; font-size: 0.76rem; color: var(--accent-ink); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- Sequence (auth) ---------- */
+  .seq { display: flex; flex-direction: column; gap: 0; counter-reset: step; }
+  .step { display: grid; grid-template-columns: 2.2rem 1fr; gap: 1rem; padding: 0.2rem 0 1.1rem; position: relative; }
+  .step:not(:last-child)::before {
+    content: ""; position: absolute; left: 1.1rem; top: 2.1rem; bottom: 0; width: 2px; background: var(--border);
+  }
+  .step .n {
+    counter-increment: step;
+    width: 2.2rem; height: 2.2rem; border-radius: 50%;
+    background: var(--surface); border: 1.5px solid var(--accent); color: var(--accent-ink);
+    display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: 0.85rem; z-index: 1;
+  }
+  .step .n::before { content: counter(step); }
+  .step .body h4 { margin: 0.25rem 0 0.25rem; font-size: 0.95rem; }
+  .step .body p { margin: 0; font-size: 0.86rem; color: var(--ink-2); }
+
+  /* ---------- Entity blocks ---------- */
+  .ent { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .ent .name { font-family: var(--mono); font-weight: 700; font-size: 0.9rem; padding: 0.6rem 0.9rem; background: var(--surface-2); border-bottom: 1px solid var(--border); color: var(--accent-ink); }
+  .ent ul { margin: 0; padding: 0.55rem 0.9rem 0.7rem; list-style: none; display: flex; flex-direction: column; gap: 0.15rem; }
+  .ent li { font-family: var(--mono); font-size: 0.78rem; color: var(--ink-2); display: flex; justify-content: space-between; gap: 1rem; }
+  .ent li .pk { font-size: 0.62rem; letter-spacing: 0.1em; color: var(--accent); align-self: center; }
+
+  footer { padding: 2.6rem 0 3.4rem; color: var(--ink-3); font-size: 0.82rem; }
+  footer code { font-size: 0.78rem; }
+
+  @media (max-width: 640px) {
+    .hero-inner { padding: 3rem 0 2.2rem; }
+    section { padding: 2.6rem 0; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
+</style>
+
+<header class="hero">
+  <div class="wrap hero-inner">
+    <p class="eyebrow"><span class="dot"></span> Android · Kotlin · Architecture Reference</p>
+    <h1>Cliff<span class="accent">.</span><br>a streaming voice pipeline</h1>
+    <p class="lede">
+      A real-time voice assistant that streams end to end — microphone into Deepgram Flux,
+      final transcripts into Claude over SSE, response deltas straight into Aura-2 TTS as they
+      arrive, with barge-in that cancels mid-sentence. The result feels like conversation, not
+      turn-taking.
+    </p>
+    <div class="chips">
+      <span class="chip"><b>STT</b> · Deepgram Flux</span>
+      <span class="chip"><b>LLM</b> · Claude Haiku 4.5</span>
+      <span class="chip"><b>TTS</b> · Aura-2</span>
+      <span class="chip"><b>UI</b> · Compose + M3</span>
+      <span class="chip"><b>Net</b> · OkHttp WS/SSE</span>
+      <span class="chip"><b>DB</b> · Room</span>
+    </div>
+    <div class="note">
+      <b>Read from source, not the README.</b> This working tree is pinned to Japanese end to end —
+      <code>claude-haiku-4-5</code>, <code>flux-general-multi</code> with <code>language_hint=ja</code>,
+      and the <code>aura-2-uzume-ja</code> voice. The STT hint, the system prompt, and the TTS voice
+      must all agree, because the Aura-2 voice is fixed for the life of its socket.
+    </div>
+  </div>
+</header>
+
+<nav class="rail">
+  <div class="wrap">
+    <a href="#pipeline">Pipeline</a>
+    <a href="#layers">Layers</a>
+    <a href="#components">Components</a>
+    <a href="#auth">Auth &amp; Security</a>
+    <a href="#data">Data Model</a>
+    <a href="#backend">Backend API</a>
+    <a href="#services">Services</a>
+    <a href="#stack">Stack</a>
+  </div>
+</nav>
+
+<main class="wrap">
+
+  <!-- PIPELINE -->
+  <section id="pipeline">
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <div>
+        <h2>The real-time pipeline</h2>
+        <p class="sec-sub">One turn flows left to right. Nothing waits for a full result: transcripts stream while
+          you speak, tokens stream while Claude thinks, and audio synthesizes while tokens arrive. Colors below map each stage to its owning component.</p>
+      </div>
+    </div>
+
+    <div class="pipe">
+      <div class="pipe-flow">
+        <div class="stage" style="--sc:var(--c-audio)">
+          <div class="k">Audio in</div>
+          <div class="t">Mic Capture</div>
+          <div class="d"><code>AudioRecord</code> → 16&nbsp;kHz mono PCM w/ echo cancel. ~20&nbsp;ms frames pushed to Flux.</div>
+          <span class="arrow">→</span>
+        </div>
+        <div class="stage" style="--sc:var(--c-stt)">
+          <div class="k">STT</div>
+          <div class="t">Deepgram Flux</div>
+          <div class="d">WebSocket. Turn detection emits <code>UserStart/Stop</code> + partial &amp; final transcripts.</div>
+          <span class="arrow">→</span>
+        </div>
+        <div class="stage" style="--sc:var(--c-orch)">
+          <div class="k">Dispatch</div>
+          <div class="t">Turn &amp; Dedup</div>
+          <div class="d">Final transcript de-duped, persisted, sent to Claude. TTFT clock starts here.</div>
+          <span class="arrow">→</span>
+        </div>
+        <div class="stage" style="--sc:var(--c-llm)">
+          <div class="k">LLM</div>
+          <div class="t">Claude (SSE)</div>
+          <div class="d">Stateless POST with full history. <code>TextDelta</code> events stream back token by token.</div>
+          <span class="arrow">→</span>
+        </div>
+        <div class="stage" style="--sc:var(--c-tts)">
+          <div class="k">TTS</div>
+          <div class="t">Aura-2</div>
+          <div class="d">Each delta streamed to the TTS socket instantly; PCM returns as it synthesizes.</div>
+          <span class="arrow">→</span>
+        </div>
+        <div class="stage" style="--sc:var(--c-audio)">
+          <div class="k">Audio out</div>
+          <div class="t">Playback</div>
+          <div class="d"><code>AudioTrack</code> @ 48&nbsp;kHz. Smart routing: speaker / BT&nbsp;SCO / wired / earpiece.</div>
+          <span class="arrow">→</span>
+        </div>
+      </div>
+
+      <div class="bargein">
+        <span class="tag">Barge-in ⟲</span>
+        <p><b>BargeInController</b> straddles the whole pipeline. On <code>UserStart</code> it arms a <b>150&nbsp;ms</b>
+          debounce; if you're still talking after it, <code>llm.cancelResponse()</code> kills the in-flight SSE request and
+          <code>tts.stop()</code> squelches playback — drop incoming PCM, pause+flush the <code>AudioTrack</code>, send <code>Clear</code>.
+          <code>UserStop</code> disarms it. That's how you cut Cliff off mid-sentence.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- LAYERS -->
+  <section id="layers">
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <div>
+        <h2>Architecture layers</h2>
+        <p class="sec-sub">MVVM around a single orchestrating ViewModel. Dependencies are wired by a hand-rolled
+          Service Locator — one shared <code>OkHttpClient</code> feeds HTTP, both WebSockets, and the SSE stream.</p>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>Technology</th><th class="mono">Key files</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><b>UI</b></td><td>Jetpack Compose + Material 3</td><td class="mono">MainActivity · VoiceAgentScreen · AudioBlobVisualizer · CustomPromptScreen</td></tr>
+          <tr><td><b>State / Orchestration</b></td><td>MVVM · Coroutines · StateFlow</td><td class="mono">VoiceAgentViewModel · BargeInController</td></tr>
+          <tr><td><b>Networking</b></td><td>OkHttp — HTTP + WebSocket</td><td class="mono">ClaudeStreamingClient · FluxClientImpl · DeepgramTtsClient</td></tr>
+          <tr><td><b>Auth / Prefs</b></td><td>OkHttp + SharedPreferences</td><td class="mono">PrefsRepository · PrefsApiClient · CliffLocalPrefs</td></tr>
+          <tr><td><b>Data</b></td><td>Room</td><td class="mono">AppDatabase · Entities · ConversationRepository</td></tr>
+          <tr><td><b>Audio</b></td><td>AudioRecord / AudioTrack</td><td class="mono">audio/AudioCapture.kt</td></tr>
+          <tr><td><b>DI</b></td><td>Service Locator</td><td class="mono">di/ServiceLocator.kt</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- COMPONENTS -->
+  <section id="components">
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <div>
+        <h2>Core components</h2>
+        <p class="sec-sub">The moving parts, colored by pipeline role. The ViewModel is the hub; everything else is a
+          swappable client behind an interface.</p>
+      </div>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <h3><span class="swatch" style="background:var(--c-orch)"></span>VoiceAgentViewModel</h3>
+        <p>The orchestrator. Owns the startup gate, session lifecycle, STT→LLM→TTS wiring, audio routing, mic-energy
+          computation, and every UI <code>StateFlow</code>.</p>
+        <ul class="files"><li>ui</li><li>gate</li><li>ttsLevel</li><li>micLevel</li><li>latencyMs</li></ul>
+      </div>
+      <div class="card">
+        <h3><span class="swatch" style="background:var(--accent)"></span>BargeInController</h3>
+        <p>150&nbsp;ms debounced interruption detection. Cancels the LLM and squelches TTS the moment overlapping speech
+          is confirmed.</p>
+        <ul class="files"><li>onFluxEvent()</li><li>llm.cancelResponse()</li><li>tts.stop()</li></ul>
+      </div>
+      <div class="card">
+        <h3><span class="swatch" style="background:var(--c-stt)"></span>FluxClientImpl</h3>
+        <p>Deepgram Flux STT over WebSocket. Parses <code>TurnInfo</code>/<code>Results</code> into partials and
+          turn events; buffers up to 50 audio frames before the socket opens so no syllable is lost.</p>
+        <ul class="files"><li>connect()</li><li>sendPcm()</li><li>FluxClient.Event</li></ul>
+      </div>
+      <div class="card">
+        <h3><span class="swatch" style="background:var(--c-llm)"></span>ClaudeStreamingClient</h3>
+        <p>Anthropic Messages API over SSE. Stateless per request — resends full history — and cancellable in flight.
+          Emits <code>TextDelta</code> / <code>TextCompleted</code> / <code>Error</code>.</p>
+        <ul class="files"><li>sendUserText()</li><li>parseSSEStream()</li><li>cancelResponse()</li></ul>
+      </div>
+      <div class="card">
+        <h3><span class="swatch" style="background:var(--c-tts)"></span>DeepgramTtsClient</h3>
+        <p>Aura-2 TTS socket + <code>AudioTrack</code> playback. Handles audio focus, speakerphone routing, squelch on
+          barge-in, and the ~30&nbsp;fps visualizer level callback.</p>
+        <ul class="files"><li>streamDelta()</li><li>flush()</li><li>stop()</li></ul>
+      </div>
+      <div class="card">
+        <h3><span class="swatch" style="background:var(--c-audio)"></span>AudioBlobVisualizer</h3>
+        <p>A single Compose <code>Canvas</code> — 7 additively-blended orange orbs driven by
+          <code>max(ttsLevel, micLevel)</code>. Orbit speed, breathing, and spread all scale with amplitude.</p>
+        <ul class="files"><li>Canvas</li><li>BlendMode.Plus</li><li>withFrameNanos</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- AUTH -->
+  <section id="auth">
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <div>
+        <h2>Auth &amp; security model</h2>
+        <p class="sec-sub">No long-lived API keys ever touch the device, and the backend keeps no state. The app
+          authenticates with two shared secrets and mints short-lived (10&nbsp;min) Deepgram and Claude credentials on
+          demand, cached in memory.</p>
+      </div>
+    </div>
+
+    <div class="seq">
+      <div class="step"><div class="n"></div><div class="body">
+        <h4>Two shared secrets</h4>
+        <p>Requests carry a secret path segment in the URL (<code>CLIFF_SECRET_PATH</code>) and an app-key header
+          (<code>X-Cliff-App-Key</code> / <code>CLIFF_APP_KEY</code>). Both come from <code>BuildConfig</code> and must
+          match the server — no device identity, no bearer token, no server-side state.</p>
+      </div></div>
+      <div class="step"><div class="n"></div><div class="body">
+        <h4>Startup preflight</h4>
+        <p>On launch the app mints a Deepgram token to confirm the backend is reachable and the app key is accepted.
+          Success → <b>Ready</b> (the token is cached for the first session); failure → an error screen with Retry.</p>
+      </div></div>
+      <div class="step"><div class="n"></div><div class="body">
+        <h4>Mint &amp; cache per credential</h4>
+        <p><code>PrefsRepository</code> fetches a Deepgram access token and a Claude API key from the backend, caching
+          each in memory and re-minting ~30&nbsp;s before it expires.</p>
+      </div></div>
+    </div>
+
+    <div class="note" style="margin-top:1.6rem">
+      <b>Build-time secrets:</b> <code>CLIFF_PREFS_BASE_URL</code>, <code>CLIFF_SECRET_PATH</code>, and
+      <code>CLIFF_APP_KEY</code> come from <code>local.properties</code> / env vars into <code>BuildConfig</code>. The
+      app key rides in the <code>X-Cliff-App-Key</code> header on both mint endpoints.
+    </div>
+  </section>
+
+  <!-- DATA -->
+  <section id="data">
+    <div class="sec-head">
+      <span class="sec-num">05</span>
+      <div>
+        <h2>Data model</h2>
+        <p class="sec-sub">Room DB <code>deepgramagent.db</code> (v1, destructive migration). Conversation history is
+          <b>stateless toward Claude</b> — the full history is resent every turn — but persisted locally so context
+          survives restarts.</p>
+      </div>
+    </div>
+    <div class="grid g3">
+      <div class="ent">
+        <div class="name">ChatSession</div>
+        <ul>
+          <li>id <span class="pk">PK · String</span></li>
+          <li>title</li>
+          <li>createdAt</li>
+        </ul>
+      </div>
+      <div class="ent">
+        <div class="name">MessageItem</div>
+        <ul>
+          <li>messageId <span class="pk">PK</span></li>
+          <li>sessionId</li>
+          <li>role</li>
+          <li>text</li>
+          <li>createdAt</li>
+        </ul>
+      </div>
+      <div class="ent">
+        <div class="name">TranscriptChunk</div>
+        <ul>
+          <li>id <span class="pk">PK</span></li>
+          <li>sessionId</li>
+          <li>fromMs · toMs</li>
+          <li>text</li>
+          <li>isFinal</li>
+        </ul>
+      </div>
+    </div>
+    <p class="sec-sub" style="margin-top:1rem">
+      DAOs: <code>SessionDao</code>, <code>MessageDao</code>, <code>TranscriptDao</code> — reached through
+      <code>ConversationRepository</code> (<code>newSession</code>, <code>addUserText</code>,
+      <code>addAssistantText</code>).
+    </p>
+  </section>
+
+  <!-- BACKEND -->
+  <section id="backend">
+    <div class="sec-head">
+      <span class="sec-num">06</span>
+      <div>
+        <h2>Backend contract</h2>
+        <p class="sec-sub">Cliff is client-only. It expects just these two endpoints under
+          <code>/api/{secret_path}</code>; a stateless FastAPI reference lives in <code>server/</code>. The backend
+          holds the real Deepgram &amp; Anthropic keys and hands out ephemeral ones. Every request carries the
+          <code>X-Cliff-App-Key</code> header.</p>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Method</th><th class="mono">Path</th><th>Auth</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="method">POST</span></td><td class="mono">/deepgram/token</td><td>App-Key</td><td>Mint a short-lived Deepgram token (STT + TTS) via Deepgram's grant API.</td></tr>
+          <tr><td><span class="method">POST</span></td><td class="mono">/claude/api-key</td><td>App-Key</td><td>Return the Claude API key for the Messages API.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- SERVICES -->
+  <section id="services">
+    <div class="sec-head">
+      <span class="sec-num">07</span>
+      <div>
+        <h2>External services</h2>
+        <p class="sec-sub">Three streaming endpoints, all authenticated with minted short-lived credentials.</p>
+      </div>
+    </div>
+    <div class="grid g3">
+      <div class="card" style="border-top:3px solid var(--c-stt)">
+        <h3><span class="swatch" style="background:var(--c-stt)"></span>Deepgram Flux</h3>
+        <p>Streaming STT + turn detection.</p>
+        <ul class="files">
+          <li>wss · /v2/listen</li><li>flux-general-multi</li><li>language_hint=ja</li>
+          <li>linear16 · 16 kHz</li><li>eot_threshold 0.85</li><li>eot_timeout 8000ms</li>
+        </ul>
+      </div>
+      <div class="card" style="border-top:3px solid var(--c-llm)">
+        <h3><span class="swatch" style="background:var(--c-llm)"></span>Anthropic Claude</h3>
+        <p>Streaming LLM responses (SSE).</p>
+        <ul class="files">
+          <li>/v1/messages</li><li>claude-haiku-4-5</li><li>version 2023-06-01</li>
+          <li>max_tokens 1024</li><li>stream=true</li>
+        </ul>
+      </div>
+      <div class="card" style="border-top:3px solid var(--c-tts)">
+        <h3><span class="swatch" style="background:var(--c-tts)"></span>Deepgram Aura-2</h3>
+        <p>Streaming TTS.</p>
+        <ul class="files">
+          <li>wss · /v1/speak</li><li>aura-2-uzume-ja</li><li>linear16 · 48 kHz</li>
+          <li>container=none</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- STACK -->
+  <section id="stack" style="border-bottom:none">
+    <div class="sec-head">
+      <span class="sec-num">08</span>
+      <div>
+        <h2>Stack &amp; build</h2>
+        <p class="sec-sub">Kotlin · Compose · min SDK 26 · target/compile SDK 35 · JVM 21. Two runtime permissions:
+          <code>INTERNET</code> and <code>RECORD_AUDIO</code>.</p>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Dependency</th><th class="mono">Version</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">compose-bom</td><td class="mono num">2024.10.01</td><td>Compose version alignment</td></tr>
+          <tr><td class="mono">material3</td><td class="mono num">1.3.0</td><td>Material 3 UI</td></tr>
+          <tr><td class="mono">okhttp</td><td class="mono num">4.12.0</td><td>HTTP · WebSocket · SSE</td></tr>
+          <tr><td class="mono">room</td><td class="mono num">2.6.1</td><td>Local persistence (KSP)</td></tr>
+          <tr><td class="mono">kotlinx-coroutines-android</td><td class="mono num">1.9.0</td><td>Async + Flow</td></tr>
+          <tr><td class="mono">kotlinx-serialization-json</td><td class="mono num">1.6.3</td><td>Flux message parsing</td></tr>
+          <tr><td class="mono">lifecycle-*</td><td class="mono num">2.8.6</td><td>ViewModel + Compose lifecycle</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    Generated from source at <code>com.m15.cliff</code> · package <code>applicationId com.m15.cliff</code>,
+    version <code>0.1</code>. Machine-readable companion: <code>architecture.json</code>.
+    Model, STT hint, and TTS voice reflect the current working tree (Japanese configuration).
+  </footer>
+</main>

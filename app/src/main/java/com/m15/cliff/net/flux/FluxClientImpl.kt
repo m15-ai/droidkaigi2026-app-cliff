@@ -15,12 +15,18 @@ class FluxClientImpl(
         .build(),
     private val useMocks: Boolean = false,
 
-    // Flux model id
-    private val model: String = "flux-general-en",
+    // Flux model id. The multilingual model covers 10 languages (en, es, fr, de,
+    // hi, ru, pt, ja, it, nl) with the same turn/EOT semantics as flux-general-en,
+    // so barge-in behaves identically.
+    private val model: String = "flux-general-multi",
 
-    // Used to mint Deepgram short-lived tokens via sam_server.py
+    // Cliff is pinned to Japanese end-to-end (see LlmClient.LANGUAGE_DIRECTIVE and
+    // the Aura-2 voice in DeepgramTtsClient). Omitting this would let Flux
+    // auto-detect, but the rest of the pipeline can only speak Japanese back.
+    private val languageHint: String = "ja",
+
+    // Used to mint Deepgram short-lived tokens from the backend.
     private val prefsRepo: PrefsRepository? = null,
-    private val deviceKey: String? = null,
 
     // How long you want DG tokens to last (server may cap). 10 min is fine.
     private val deepgramTtlSeconds: Int = 600,
@@ -44,6 +50,7 @@ class FluxClientImpl(
     private val url: String =
         "wss://api.deepgram.com/v2/listen" +
                 "?model=$model" +
+                "&language_hint=$languageHint" +
                 "&encoding=linear16" +
                 "&sample_rate=16000" +
                 "&eot_threshold=0.85" +
@@ -91,7 +98,7 @@ class FluxClientImpl(
             try {
                 val dgBearer = mintDeepgramBearerOrNull()
                 if (dgBearer.isNullOrBlank()) {
-                    throw IllegalStateException("No Deepgram auth available (token mint failed or prefsRepo/deviceKey not set).")
+                    throw IllegalStateException("No Deepgram auth available (token mint failed or prefsRepo not set).")
                 }
 
                 val req = Request.Builder()
@@ -112,9 +119,8 @@ class FluxClientImpl(
 
     private suspend fun mintDeepgramBearerOrNull(): String? {
         val repo = prefsRepo ?: return null
-        val dk = deviceKey ?: return null
         return try {
-            repo.getDeepgramAccessToken(dk, deepgramTtlSeconds)
+            repo.getDeepgramAccessToken(deepgramTtlSeconds)
         } catch (t: Throwable) {
             Log.w(TAG, "Deepgram token mint failed: ${t.message}")
             null

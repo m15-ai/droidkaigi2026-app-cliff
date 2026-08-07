@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "Cliff",
+  "tagline": "Real-time streaming voice assistant for Android",
+  "description": "Cliff is an Android voice assistant that delivers natural, low-latency conversation by streaming end to end: mic PCM streams into Deepgram Flux STT over a WebSocket, final transcripts are sent to Anthropic Claude via SSE, response text deltas are piped into Deepgram Aura-2 TTS as they arrive, and a barge-in controller cancels the LLM and squelches audio the instant the user interrupts.",
+  "generatedFrom": "source code (authoritative); reflects the working tree, which differs from README.md in model/voice/language.",
+  "meta": {
+    "applicationId": "com.m15.cliff",
+    "namespace": "com.m15.cliff",
+    "appLabel": "Cliff",
+    "platform": "Android",
+    "language": "Kotlin",
+    "versionName": "0.1",
+    "versionCode": 1,
+    "minSdk": 26,
+    "targetSdk": 35,
+    "compileSdk": 35,
+    "jvm": "Java 21 (jvmToolchain 21)",
+    "entryPoints": {
+      "application": "com.m15.cliff.App",
+      "activity": "com.m15.cliff.MainActivity",
+      "launchOrientation": "portrait"
+    },
+    "permissions": [
+      "android.permission.INTERNET",
+      "android.permission.RECORD_AUDIO"
+    ]
+  },
+  "runtimeConfiguration": {
+    "note": "The pipeline is pinned to Japanese end-to-end. STT language_hint, the LLM system prompt, and the TTS voice must all agree because the Aura-2 voice is fixed for the life of its socket.",
+    "llmModel": "claude-haiku-4-5 (active in ClaudeStreamingClient; claude-sonnet-4-6 is present but commented out)",
+    "sttModel": "flux-general-multi (language_hint=ja)",
+    "ttsVoice": "aura-2-uzume-ja",
+    "responseLanguage": "Japanese (enforced by the system prompt)",
+    "readmeDivergence": "README.md documents an English configuration (claude-sonnet-4-6, flux-general-en, aura-2-arcas-en). The code is the source of truth."
+  },
+  "techStack": {
+    "ui": "Jetpack Compose + Material 3",
+    "state": "Kotlin Coroutines + StateFlow, MVVM (single ViewModel orchestrator)",
+    "stt": "Deepgram Flux over WebSocket (wss://api.deepgram.com/v2/listen)",
+    "llm": "Anthropic Claude via Messages API with SSE streaming (https://api.anthropic.com/v1/messages)",
+    "tts": "Deepgram Aura-2 over WebSocket (wss://api.deepgram.com/v1/speak)",
+    "audio": "AudioRecord (capture, 16 kHz PCM) + AudioTrack (playback, 48 kHz PCM)",
+    "storage": "Room 2.6.1 (conversation history) + SharedPreferences (local settings)",
+    "networking": "OkHttp 4.12.0 (shared client for HTTP + both WebSockets)",
+    "serialization": "org.json (Claude payloads) + kotlinx.serialization (Flux messages)",
+    "di": "Service Locator (object ServiceLocator, manual singletons)"
+  },
+  "pipeline": {
+    "summary": "Mic -> Flux STT -> Claude -> Aura-2 TTS -> Speaker, with a barge-in controller straddling STT events, the LLM, and TTS.",
+    "orchestrator": "VoiceAgentViewModel",
+    "stages": [
+      {
+        "id": "capture",
+        "name": "Mic Capture",
+        "category": "audio-io",
+        "component": "DefaultAudioCapture (audio/AudioCapture.kt)",
+        "detail": "AudioRecord captures 16 kHz mono PCM with hardware echo cancellation. Each ~20 ms frame is forwarded to Flux via flux.sendPcm(pcm) and also fed to updateMicLevel() to drive the visualizer.",
+        "output": "ShortArray PCM frames"
+      },
+      {
+        "id": "stt",
+        "name": "Deepgram Flux STT",
+        "category": "stt",
+        "component": "FluxClientImpl (net/flux/FluxClientImpl.kt)",
+        "detail": "WebSocket to Deepgram Flux (flux-general-multi, language_hint=ja, linear16, 16 kHz). Emits UserStart/UserStop turn events and Partial(text, isFinal) transcripts. Turn detection uses eot_threshold=0.85, eager_eot_threshold=0.85, eot_timeout_ms=8000. Audio captured before the socket opens is buffered (up to 50 frames) so the first syllable isn't lost.",
+        "output": "FluxClient.Event stream (UserStart, UserStop, Partial, Error)"
+      },
+      {
+        "id": "dispatch",
+        "name": "Turn dispatch & dedup",
+        "category": "orchestration",
+        "component": "VoiceAgentViewModel.startSession collector",
+        "detail": "On a final Partial, the transcript is trimmed and compared to the last user message (exact match + areSimilar fuzzy check) to drop duplicates. New text is persisted (repo.addUserText) and passed to sendToLLM(). LatencyTracker.markRequestSent() stamps the TTFT clock here.",
+        "output": "user text -> sendToLLM()"
+      },
+      {
+        "id": "llm",
+        "name": "Claude (Messages API, SSE)",
+        "category": "llm",
+        "component": "ClaudeStreamingClient (net/claude/ClaudeStreamingClient.kt)",
+        "detail": "Stateless HTTP POST per turn with stream=true, max_tokens=1024. The full conversation history plus the new user message is sent as the messages array, with the user-configurable system prompt as the top-level system field. Parses the SSE stream, emitting TextDelta on each content_block_delta text_delta and TextCompleted on message_stop. First TextDelta stamps LatencyTracker.markFirstToken() (TTFT).",
+        "output": "LlmClient.Event stream (TextDelta, TextCompleted, Error)"
+      },
+      {
+        "id": "tts",
+        "name": "Deepgram Aura-2 TTS",
+        "category": "tts",
+        "component": "DeepgramTtsClient (tts/DeepgramTtsClient.kt)",
+        "detail": "Each Claude TextDelta is immediately streamed to Aura-2 (aura-2-uzume-ja, linear16, 48 kHz) via streamDelta() -> a serialized outbox Channel -> {\"type\":\"Speak\"}. On TextCompleted the ViewModel calls flush() ({\"type\":\"Flush\"}). Returned PCM is written to an AudioTrack (WRITE_BLOCKING); RMS of each buffer drives the visualizer at ~30 fps via onAudioLevel.",
+        "output": "PCM to AudioTrack -> speaker"
+      },
+      {
+        "id": "playback",
+        "name": "Playback & routing",
+        "category": "audio-io",
+        "component": "DeepgramTtsClient AudioTrack + VoiceAgentViewModel.applyRouting",
+        "detail": "AudioTrack plays 48 kHz mono PCM under USAGE_VOICE_COMMUNICATION with transient-may-duck audio focus. Routing picks speaker vs. Bluetooth SCO / wired headset / earpiece (API 31+ setCommunicationDevice; legacy path below). An AudioDeviceCallback re-applies routing when devices are added/removed.",
+        "output": "audible speech"
+      }
+    ],
+    "bargeIn": {
+      "component": "BargeInController",
+      "detail": "Subscribes to Flux turn events. On UserStart it arms a 150 ms debounced job; if the user is still speaking after the delay, it calls llm.cancelResponse() (cancels the in-flight SSE request) and tts.stop() (squelch: drop incoming PCM, pause+flush AudioTrack, send Clear). UserStop disarms the pending job.",
+      "debounceMs": 150
+    },
+    "latency": {
+      "metric": "TTFT (time-to-first-token)",
+      "component": "util/LatencyTracker.kt",
+      "measuredFrom": "final transcript dispatched to Claude",
+      "measuredTo": "first streamed TextDelta arrives",
+      "exposedAs": "VoiceAgentViewModel.latencyMs StateFlow, shown as an on-screen overlay"
+    }
+  },
+  "architectureLayers": [
+    { "layer": "UI", "tech": "Jetpack Compose + Material 3", "files": ["MainActivity.kt", "ui/VoiceAgentScreen.kt", "ui/AudioBlobVisualizer.kt", "ui/CliffSetupScreen.kt", "CustomPromptScreen.kt", "ui/theme/*"] },
+    { "layer": "State / Orchestration", "tech": "MVVM, Coroutines, StateFlow", "files": ["VoiceAgentViewModel.kt", "BargeInController.kt"] },
+    { "layer": "Networking clients", "tech": "OkHttp (HTTP + WebSocket)", "files": ["net/LlmClient.kt", "net/claude/ClaudeStreamingClient.kt", "net/flux/FluxClient.kt", "net/flux/FluxClientImpl.kt", "tts/DeepgramTtsClient.kt"] },
+    { "layer": "Auth / Prefs", "tech": "OkHttp + SharedPreferences", "files": ["prefs/PrefsApiClient.kt", "prefs/PrefsRepository.kt", "prefs/CliffLocalPrefs.kt"] },
+    { "layer": "Data", "tech": "Room", "files": ["data/db/AppDatabase.kt", "data/db/Entities.kt", "data/db/dao/*", "data/repo/ConversationRepository.kt", "data/model/Models.kt"] },
+    { "layer": "Audio", "tech": "AudioRecord / AudioTrack", "files": ["audio/AudioCapture.kt"] },
+    { "layer": "DI", "tech": "Service Locator", "files": ["di/ServiceLocator.kt"] }
+  ],
+  "components": {
+    "ServiceLocator": {
+      "file": "di/ServiceLocator.kt",
+      "role": "Manual dependency graph. init(ctx) builds a single shared OkHttpClient and wires repo, flux, llm, tts, audio, barge, prefsRepo.",
+      "singletons": ["repo", "flux", "llm", "tts", "audio", "barge", "prefsRepo", "audioManager"]
+    },
+    "VoiceAgentViewModel": {
+      "file": "VoiceAgentViewModel.kt",
+      "role": "Central orchestrator. Owns the startup gate, session lifecycle, STT->LLM->TTS wiring, audio routing, mic-level computation, and the visualizer/latency StateFlows.",
+      "state": "AgentUiState (sessionId, sessionActive, livePartial, assistantLive, isThinking, error, messages, speakerOn)",
+      "gate": "GateState = Checking | Ready | Error",
+      "keyFlows": ["ui", "gate", "systemMessage", "ttsLevel", "micLevel", "showVisualizer", "latencyMs"]
+    },
+    "BargeInController": { "file": "BargeInController.kt", "role": "150 ms debounced interruption detection; cancels LLM and squelches TTS." },
+    "LlmClient": { "file": "net/LlmClient.kt", "role": "Streaming LLM interface. Defines Event (TextDelta/TextCompleted/Error) and DEFAULT_SYSTEM_MESSAGE (the Japanese Cliff persona)." },
+    "ClaudeStreamingClient": { "file": "net/claude/ClaudeStreamingClient.kt", "role": "LlmClient impl over the Anthropic Messages API with SSE parsing; stateless per request; cancellable in-flight." },
+    "FluxClient / FluxClientImpl": { "file": "net/flux/FluxClientImpl.kt", "role": "Deepgram Flux STT WebSocket; parses TurnInfo/Results messages into Partial + UserStart/UserStop events; buffers pre-open audio." },
+    "DeepgramTtsClient": { "file": "tts/DeepgramTtsClient.kt", "role": "Aura-2 TTS WebSocket + AudioTrack playback, audio focus, speakerphone routing, squelch/barge-in, and visualizer level callback." },
+    "PrefsRepository": { "file": "prefs/PrefsRepository.kt", "role": "Mints short-lived Deepgram and Claude credentials with the app key and caches each in memory until ~30 s before expiry." },
+    "PrefsApiClient": { "file": "prefs/PrefsApiClient.kt", "role": "Minimal HTTP client for the two app-key-authenticated token endpoints under /api/{secret_path}." },
+    "ConversationRepository": { "file": "data/repo/ConversationRepository.kt", "role": "Room-backed persistence: newSession, addUserText, addAssistantText." },
+    "LatencyTracker": { "file": "util/LatencyTracker.kt", "role": "TTFT measurement via markRequestSent / markFirstToken; exposes ttftMs." },
+    "AudioBlobVisualizer": { "file": "ui/AudioBlobVisualizer.kt", "role": "Compose Canvas rendering 7 additively-blended orange orbs driven by max(ttsLevel, micLevel); orbit speed, breathing, and spread scale with amplitude." }
+  },
+  "dataModel": {
+    "database": {
+      "name": "deepgramagent.db",
+      "type": "Room",
+      "version": 1,
+      "migration": "fallbackToDestructiveMigration",
+      "class": "AppDatabase"
+    },
+    "entities": [
+      { "name": "ChatSession", "primaryKey": "id (String)", "fields": ["id", "title", "createdAt"] },
+      { "name": "MessageItem", "primaryKey": "messageId (String)", "fields": ["messageId", "sessionId", "role", "text", "createdAt"] },
+      { "name": "TranscriptChunk", "primaryKey": "id (String)", "fields": ["id", "sessionId", "fromMs", "toMs", "text", "isFinal"] }
+    ],
+    "daos": ["SessionDao", "MessageDao", "TranscriptDao"],
+    "inMemoryModel": { "name": "ChatMessage", "file": "data/model/Models.kt", "fields": ["role", "text", "ts"] },
+    "conversationStrategy": "Stateless. Claude keeps no server-side session; the app resends the full history (system + all prior turns) on every request. Room persists it locally so context survives restarts."
+  },
+  "security": {
+    "principle": "No long-lived API keys on device, and no server-side state. The app authenticates with two shared secrets and mints short-lived (10 min TTL) Deepgram and Claude credentials on demand.",
+    "authModel": "Secret path segment in the API URL (CLIFF_SECRET_PATH) + app-key header X-Cliff-App-Key (CLIFF_APP_KEY). No device identity, no bearer token, no server-side state.",
+    "buildConfig": ["CLIFF_PREFS_BASE_URL", "CLIFF_SECRET_PATH", "CLIFF_APP_KEY"],
+    "appKeyHeader": "X-Cliff-App-Key (sent on both mint endpoints)",
+    "tokenCaching": {
+      "deepgramToken": "in-memory, refreshed 30 s before expiry",
+      "claudeApiKey": "in-memory, refreshed 30 s before expiry"
+    },
+    "startupGate": "On launch the app mints a Deepgram token as a connectivity preflight -> Ready on success (token cached for the first session). Failure -> Error screen with Retry."
+  },
+  "backendContract": {
+    "note": "Cliff is client-only. It expects a backend serving these two endpoints under /api/{secret_path}; a stateless FastAPI reference lives in server/. Every request carries the X-Cliff-App-Key header.",
+    "basePath": "/api/{secret_path}",
+    "auth": "X-Cliff-App-Key header + secret path segment; stateless (no bearer token, no device identity)",
+    "endpoints": [
+      { "method": "POST", "path": "/deepgram/token", "auth": "App-Key", "request": "{ ttlSeconds }", "response": "{ access_token, expires_in }", "notes": "Server exchanges its Deepgram key via /v1/auth/grant so the raw key never leaves the backend." },
+      { "method": "POST", "path": "/claude/api-key", "auth": "App-Key", "request": "{}", "response": "{ api_key, expires_in }" }
+    ]
+  },
+  "externalServices": [
+    { "name": "Deepgram Flux", "purpose": "Streaming STT + turn detection", "endpoint": "wss://api.deepgram.com/v2/listen", "params": { "model": "flux-general-multi", "language_hint": "ja", "encoding": "linear16", "sample_rate": 16000, "eot_threshold": 0.85, "eager_eot_threshold": 0.85, "eot_timeout_ms": 8000 } },
+    { "name": "Anthropic Claude", "purpose": "Streaming LLM responses", "endpoint": "https://api.anthropic.com/v1/messages", "params": { "model": "claude-haiku-4-5", "anthropic-version": "2023-06-01", "max_tokens": 1024, "stream": true } },
+    { "name": "Deepgram Aura-2", "purpose": "Streaming TTS", "endpoint": "wss://api.deepgram.com/v1/speak", "params": { "model": "aura-2-uzume-ja", "encoding": "linear16", "sample_rate": 48000, "container": "none" } }
+  ],
+  "keyDependencies": {
+    "compose-bom": "2024.10.01",
+    "material3": "1.3.0",
+    "core-ktx": "1.13.1",
+    "activity-compose": "1.9.3",
+    "lifecycle-*": "2.8.6",
+    "coroutines-android": "1.9.0",
+    "okhttp": "4.12.0",
+    "room": "2.6.1",
+    "kotlinx-serialization-json": "1.6.3",
+    "material": "1.12.0"
+  }
+}

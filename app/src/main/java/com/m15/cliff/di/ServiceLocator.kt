@@ -2,8 +2,6 @@ package com.m15.cliff
 
 import android.content.Context
 import android.media.AudioManager
-import android.provider.Settings
-import android.util.Log
 import com.m15.cliff.audio.DefaultAudioCapture
 import com.m15.cliff.data.db.AppDatabase
 import com.m15.cliff.data.repo.ConversationRepository
@@ -29,7 +27,6 @@ object ServiceLocator {
     lateinit var audioManager: AudioManager
     lateinit var appContext: Context
 
-    lateinit var deviceKey: String
     lateinit var prefsRepo: PrefsRepository
 
     fun init(ctx: Context) {
@@ -37,13 +34,6 @@ object ServiceLocator {
 
         appContext = ctx.applicationContext
         audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-
-        deviceKey = Settings.Secure.getString(
-            appContext.contentResolver,
-            Settings.Secure.ANDROID_ID
-        ) ?: "UNKNOWN_ANDROID_ID"
-
-        Log.d("ServiceLocator", "Android Id=$deviceKey")
 
         val db = AppDatabase.get(appContext)
         repo = ConversationRepository(db)
@@ -56,26 +46,24 @@ object ServiceLocator {
             secretPath = BuildConfig.CLIFF_SECRET_PATH,
             appKey = BuildConfig.CLIFF_APP_KEY
         )
-        prefsRepo = PrefsRepository(appContext, prefsApi)
+        prefsRepo = PrefsRepository(prefsApi)
 
         flux = FluxClientImpl(
             okHttp = okHttp,
             useMocks = false,
-            prefsRepo = prefsRepo,
-            deviceKey = deviceKey
+            prefsRepo = prefsRepo
         )
 
         llm = ClaudeStreamingClient(
             okHttp = okHttp,
             model = "claude-sonnet-4-6",
-            prefsRepo = prefsRepo,
-            deviceKey = deviceKey
+            prefsRepo = prefsRepo
         )
 
         tts = DeepgramTtsClient(
             context = appContext,
             okHttp = okHttp,
-            deepgramTokenProvider = { prefsRepo.getDeepgramAccessToken(deviceKey) },
+            deepgramTokenProvider = { prefsRepo.getDeepgramAccessToken() },
             sampleRate = 48_000,
             onAudioLevel = null
         )

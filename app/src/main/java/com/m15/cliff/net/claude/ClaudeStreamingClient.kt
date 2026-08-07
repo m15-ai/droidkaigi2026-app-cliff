@@ -28,7 +28,6 @@ class ClaudeStreamingClient(
     //private val model: String = "claude-sonnet-4-6",
     private val model: String = "claude-haiku-4-5",
     private val prefsRepo: PrefsRepository,
-    private val deviceKey: String,
 ) : LlmClient {
 
     private val TAG = "ClaudeStreaming"
@@ -202,7 +201,7 @@ class ClaudeStreamingClient(
     }
 
     private suspend fun fetchClaudeApiKey(): String {
-        return prefsRepo.getClaudeApiKey(deviceKey)
+        return prefsRepo.getClaudeApiKey()
     }
 
     companion object {

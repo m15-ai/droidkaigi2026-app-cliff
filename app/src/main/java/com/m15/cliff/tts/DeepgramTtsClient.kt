@@ -22,7 +22,13 @@ class DeepgramTtsClient(
     // NEW: token provider (minted from sam_server.py, cached in PrefsRepository)
     private val deepgramTokenProvider: suspend () -> String,
 
-    private val model: String = "aura-2-arcas-en",
+    // Aura-2 voice. Naming is aura-2-<voice>-<lang>. Japanese voices:
+    //   male   → fujin (confident, professional), ebisu (deep, sincere)
+    //   female → uzume, izanami, ama
+    // The voice is fixed for the life of the WebSocket, which is why the pipeline
+    // is pinned to Japanese end-to-end (see LlmClient.LANGUAGE_DIRECTIVE and the
+    // Flux languageHint).
+    private val model: String = "aura-2-fujin-ja",
     private val sampleRate: Int = 48_000,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     var onAudioLevel: ((Float) -> Unit)? = null

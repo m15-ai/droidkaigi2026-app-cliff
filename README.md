@@ -1,4 +1,11 @@
+<p align="center">
+  <img src="app/src/main/ic_launcher-playstore.png" alt="Cliff app icon" width="128">
+</p>
+
 # Cliff - Real-Time Voice Assistant for Android
+
+> Part of the [DroidKaigi 2026 demo suite](https://github.com/m15-ai/droidkaigi2026) — see the
+> top-level repo for the session overview and the sibling demo apps.
 
 Cliff is an open-source Android voice assistant that delivers natural, real-time conversations powered by Claude and Deepgram. It features streaming speech-to-text, streaming LLM responses, streaming text-to-speech, and full barge-in (interruption) support — so conversations feel fluid and human.
 
@@ -30,15 +37,33 @@ The result: the bot starts speaking before it's done "thinking", and you can cut
 - **Latency readout** — live time-to-first-token (TTFT) overlay so you can feel how the pipeline is performing
 - **Secure token management** — API keys minted server-side with short TTLs, never stored long-term on device
 
+## Japanese language support
+
+This build is pinned to **Japanese end-to-end**, and the three language settings move together:
+
+- **STT** — switched from the English-only `flux-general-en` to **`flux-general-multi`**, Flux's
+  multilingual model (same turn-detection/EOT semantics), with `language_hint=ja` so recognition
+  favors Japanese without disabling auto-detect.
+- **LLM** — the default system message instructs Claude to *always reply in Japanese* (polite
+  ですます form, numbers and units written out as Japanese words, no Latin script) regardless of
+  the language spoken. See `LlmClient.DEFAULT_SYSTEM_MESSAGE`.
+- **TTS** — the Aura-2 voice is **`aura-2-fujin-ja`** (Japanese). The voice is fixed for the life
+  of the WebSocket, which is *why* the system message is load-bearing: a reply in any other
+  language would be handed to a Japanese voice.
+
+To switch languages, change all three together: the Flux `language_hint`, the language rule in
+`DEFAULT_SYSTEM_MESSAGE` (add the old prompt to `CliffLocalPrefs.LEGACY_SYSTEM_MESSAGES` so
+existing installs pick up the new default), and the Aura-2 voice model.
+
 ## Architecture
 
 | Layer | Tech |
 |-------|------|
 | UI | Jetpack Compose + Material 3 |
 | State | Kotlin Coroutines + Flow, MVVM |
-| STT | Deepgram Flux (`flux-general-en`) via WebSocket |
+| STT | Deepgram Flux (`flux-general-multi`, `language_hint=ja`) via WebSocket |
 | LLM | Claude Sonnet 4.6 (`claude-sonnet-4-6`) via Anthropic Messages API (SSE) |
-| TTS | Deepgram Aura-2 (`aura-2-arcas-en`) via WebSocket |
+| TTS | Deepgram Aura-2 (`aura-2-fujin-ja`) via WebSocket |
 | Audio | Android AudioRecord (capture) + AudioTrack (playback) |
 | Storage | Room DB for conversations, SharedPreferences for settings |
 | Networking | OkHttp 4 |

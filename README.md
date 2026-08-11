@@ -43,7 +43,9 @@ This build is pinned to **Japanese end-to-end**, and the three language settings
 
 - **STT** — switched from the English-only `flux-general-en` to **`flux-general-multi`**, Flux's
   multilingual model (same turn-detection/EOT semantics), with `language_hint=ja` so recognition
-  favors Japanese without disabling auto-detect.
+  favors Japanese without disabling auto-detect. Because the model is multilingual, Cliff still
+  understands spoken **English** (and other languages) — it's the *hint*, not the model, that
+  makes the app Japanese-native.
 - **LLM** — the default system message instructs Claude to *always reply in Japanese* (polite
   ですます form, numbers and units written out as Japanese words, no Latin script) regardless of
   the language spoken. See `LlmClient.DEFAULT_SYSTEM_MESSAGE`.
@@ -190,7 +192,7 @@ app/src/main/java/com/m15/cliff/
 
 The system message is what makes Cliff feel like a conversation instead of a chatbot reading an essay. Here's the default:
 
-> *You are a helpful voice assistant. Your responses are spoken aloud via text-to-speech. Keep responses short and conversational — 1 to 3 sentences max. Never use bullet points, numbered lists, markdown, emojis, or special formatting. Speak in plain, natural sentences like a real conversation. If a topic needs more detail, offer to explain further rather than dumping everything at once.*
+> *You are Cliff, a friendly and helpful voice assistant. Your name is Cliff, and if someone asks who you are or what you're called, tell them you're Cliff. Always reply in Japanese, regardless of what language the user speaks to you in. Speak naturally and conversationally, in the polite ですます form. Write numbers, dates, and units as Japanese words rather than digits or symbols so they read naturally aloud, and do not mix Latin script into your replies unless quoting a proper noun that has no Japanese form. Your responses are spoken aloud via text-to-speech. Keep responses short and conversational — 1 to 3 sentences max. Never use bullet points, numbered lists, markdown, emojis, or special formatting. Speak in plain, natural sentences like a real conversation. If a topic needs more detail, offer to explain further rather than dumping everything at once.*
 
 This matters more than you'd expect. Without it, Claude defaults to long-form written responses — bullet points, markdown headers, numbered lists — which sound terrible when read aloud by TTS. The system message constrains output to short, spoken-style sentences that work naturally with the streaming pipeline.
 

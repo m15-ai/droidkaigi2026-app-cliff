@@ -9,6 +9,12 @@
 
 Cliff is an open-source Android voice assistant that delivers natural, real-time conversations powered by Claude and Deepgram. It features streaming speech-to-text, streaming LLM responses, streaming text-to-speech, and full barge-in (interruption) support — so conversations feel fluid and human.
 
+> Cliff is one of three Android voice apps presented together at **DroidKaigi 2026**,
+> each exploring a different point in the design space:
+> - **Cliff** (this app) — cloud streaming pipeline wired by hand (Deepgram + Claude + Deepgram), client owns the orchestration.
+> - **[GVP](https://github.com/m15-ai/droidkaigi2026-app-gvp)** — fully **on-device**, no network: Sherpa-ONNX STT + MediaPipe LLM + Android TTS.
+> - **[Pica](https://github.com/m15-ai/droidkaigi2026-app-pipecat)** — **thin client over a Pipecat server**: the server owns the pipeline, the phone owns the audio.
+
 ## How It Works
 
 ```

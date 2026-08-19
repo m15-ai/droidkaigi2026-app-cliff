@@ -26,8 +26,12 @@ class BargeInController(
     // to decide whether a short final should be dropped instead of sent to the LLM.
     private val bargeTurnPending = AtomicBoolean(false)
 
-    /** True (once) if the current turn's final transcript follows a barge-in during TTS. */
-    fun consumeBargeTurnPending(): Boolean = bargeTurnPending.getAndSet(false)
+    /**
+     * True while the current turn is the one that barged in over TTS. Not consumed on
+     * read: Flux can emit the turn's final twice (EagerEndOfTurn then EndOfTurn), and
+     * both copies must see the flag. It resets when the next turn starts.
+     */
+    fun isBargeTurn(): Boolean = bargeTurnPending.get()
 
     companion object {
         private const val TAG = "BargeIn"

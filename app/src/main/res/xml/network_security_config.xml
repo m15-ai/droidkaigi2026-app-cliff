@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- The Tokyo demo backend is plain HTTP on a bare IP; cleartext is scoped to it alone. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">43.207.1.15</domain>
+    </domain-config>
+</network-security-config>

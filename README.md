@@ -100,6 +100,11 @@ existing installs pick up the new default), and the Aura-2 voice model.
    ```
    These can also be set as environment variables.
 
+   > **Plain-HTTP backends:** Android blocks cleartext traffic by default. If your backend
+   > runs plain HTTP (e.g. a bare-IP dev box with no TLS), add its host or IP to
+   > [`app/src/main/res/xml/network_security_config.xml`](app/src/main/res/xml/network_security_config.xml) —
+   > cleartext is permitted only for the hosts listed there. HTTPS base URLs need no changes.
+
 3. **Build and run**
    ```bash
    ./gradlew installDebug

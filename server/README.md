@@ -32,7 +32,7 @@ There is no device identity, no bearer token, and no server-side state. Any clie
 |----------|----------|-------------|
 | `CLIFF_SECRET_PATH` | Yes | Secret path segment for API URLs (must match `CLIFF_SECRET_PATH` in the app) |
 | `CLIFF_APP_KEY` | Yes | App key header value (must match `CLIFF_APP_KEY` in the app) |
-| `CLIFF_DEEPGRAM_API_KEY` | Yes | Your Deepgram API key (get one at [deepgram.com](https://deepgram.com)) |
+| `CLIFF_DEEPGRAM_API_KEY` | Yes | Your Deepgram API key (get one at [deepgram.com](https://deepgram.com)). Must be created with a role that can call `/v1/auth/grant` (Member or Owner) — a limited-scope key authenticates but returns `403 Insufficient permissions` when minting tokens |
 | `CLIFF_ANTHROPIC_API_KEY` | Yes | Your Anthropic API key (get one at [console.anthropic.com](https://console.anthropic.com)) |
 
 ## API Endpoints
@@ -58,6 +58,33 @@ The server exchanges your Deepgram API key for a short-lived access token via De
 
 ## Deployment
 
+### systemd (run as a service)
+
+On a Linux host (e.g. an EC2 instance), run the server as a systemd unit so it starts on boot and restarts on crash. To bind port 80 directly without root, grant the bind capability:
+
+```ini
+# /etc/systemd/system/cliff.service
+[Unit]
+Description=Cliff token-minting backend
+After=network.target
+
+[Service]
+User=ec2-user
+WorkingDirectory=/home/ec2-user/cliff-server
+EnvironmentFile=/home/ec2-user/cliff-server/cliff.env
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+ExecStart=/home/ec2-user/.local/bin/uvicorn cliff_server:app --host 0.0.0.0 --port 80
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Put the four `CLIFF_*` variables in the `EnvironmentFile` (one `KEY=value` per line, `chmod 600`), then `sudo systemctl enable --now cliff.service`.
+
+### HTTPS
+
 For production, run behind a reverse proxy (nginx, Caddy) with HTTPS. Example with Caddy:
 
 ```
@@ -67,3 +94,13 @@ your-domain.com {
 ```
 
 Then set `CLIFF_PREFS_BASE_URL=https://your-domain.com` in the Android app's `local.properties`.
+
+**No domain? Tailscale Serve.** If the server and your test devices are on the same [Tailscale](https://tailscale.com) tailnet, you can get valid HTTPS with zero DNS setup:
+
+```bash
+sudo tailscale serve --bg 80
+```
+
+This proxies `https://<machine>.<tailnet>.ts.net` → `localhost:80` with an auto-renewed Let's Encrypt certificate. The name is reachable only from inside the tailnet, and traffic rides WireGuard end-to-end. Set `CLIFF_PREFS_BASE_URL=https://<machine>.<tailnet>.ts.net` in the app.
+
+**Plain HTTP fallback.** If you serve plain HTTP (bare IP, no TLS), the app must explicitly allow cleartext to that host — see the network security config note in the [main README](../README.md#setup). Keep in mind the app key and minted credentials then travel unencrypted.

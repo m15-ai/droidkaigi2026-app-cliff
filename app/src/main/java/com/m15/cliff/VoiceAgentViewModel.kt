@@ -299,7 +299,16 @@ class VoiceAgentViewModel(
                                 val text = e.text.trim()
                                 val lastUser = ui.value.messages.lastOrNull { it.first == "user" }?.second.orEmpty()
 
-                                if (text.isNotEmpty() && text != lastUser && !areSimilar(text, lastUser)) {
+                                // The turn that barged in over TTS often transcribes as
+                                // garbage (AEC eats the first syllables). If that turn's
+                                // final is short, the user most likely just wanted to cut
+                                // Cliff off — drop it and listen instead of replying.
+                                val fromBargeTurn = barge.consumeBargeTurnPending()
+                                val strippedLen = text.count { it.isLetterOrDigit() }
+                                if (fromBargeTurn && strippedLen < 8) {
+                                    Log.i(TAG, "Dropped short post-barge-in final: $text")
+                                    _ui.update { it.copy(livePartial = null) }
+                                } else if (text.isNotEmpty() && text != lastUser && !areSimilar(text, lastUser)) {
                                     _ui.value.sessionId?.let { ServiceLocator.repo.addUserText(it, text) }
                                     _ui.update { st ->
                                         st.copy(

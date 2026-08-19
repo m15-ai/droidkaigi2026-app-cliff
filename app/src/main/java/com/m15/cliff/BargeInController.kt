@@ -32,15 +32,23 @@ class BargeInController(
                 if (userSpeaking.getAndSet(true)) return
 
                 pendingJob?.cancel()
-                pendingJob = scope.launch {
-                    delay(150)
-                    val speakingNow = userSpeaking.get()
-                    val ttsNow = tts.isSpeaking()
-                    Log.i(TAG, "BARGE-IN check after delay → userSpeaking=$speakingNow, ttsSpeaking=$ttsNow")
-                    if (speakingNow) {
-                        Log.i(TAG, "BARGE-IN TRIGGER → cancelResponse + tts.stop()")
-                        llm.cancelResponse()
-                        tts.stop()
+                if (tts.isSpeaking()) {
+                    // While TTS is playing, a turn start is almost certainly a real
+                    // interruption — fire immediately, no debounce.
+                    Log.i(TAG, "BARGE-IN TRIGGER (immediate, TTS active) → cancelResponse + tts.stop()")
+                    llm.cancelResponse()
+                    tts.stop()
+                } else {
+                    pendingJob = scope.launch {
+                        delay(150)
+                        val speakingNow = userSpeaking.get()
+                        val ttsNow = tts.isSpeaking()
+                        Log.i(TAG, "BARGE-IN check after delay → userSpeaking=$speakingNow, ttsSpeaking=$ttsNow")
+                        if (speakingNow) {
+                            Log.i(TAG, "BARGE-IN TRIGGER → cancelResponse + tts.stop()")
+                            llm.cancelResponse()
+                            tts.stop()
+                        }
                     }
                 }
             }

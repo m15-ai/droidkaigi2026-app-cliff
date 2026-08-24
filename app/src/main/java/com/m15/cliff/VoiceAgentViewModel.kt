@@ -158,6 +158,8 @@ class VoiceAgentViewModel(
                     listOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
                 } else {
                     listOf(
+                        AudioDeviceInfo.TYPE_USB_HEADSET,
+                        AudioDeviceInfo.TYPE_USB_DEVICE,
                         AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
                         AudioDeviceInfo.TYPE_WIRED_HEADSET,
                         AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
@@ -282,6 +284,7 @@ class VoiceAgentViewModel(
         am.registerAudioDeviceCallback(audioDeviceCallback, null)
 
         applyRouting()
+        (ServiceLocator.tts as? SupportsSpeakerphone)?.setSpeakerphoneEnabled(ui.value.speakerOn)
 
         viewModelScope.launch {
             val sid = ServiceLocator.repo.newSession("Voice Chat")

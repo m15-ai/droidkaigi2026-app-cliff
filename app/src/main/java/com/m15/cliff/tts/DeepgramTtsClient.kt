@@ -115,7 +115,10 @@ class DeepgramTtsClient(
             opened = CompletableDeferred()
 
             requestFocusIfNeeded()
-            if (audioTrack == null) audioTrack = buildAudioTrack()
+            if (audioTrack == null) {
+                audioTrack = buildAudioTrack()
+                applyRouting()
+            }
 
             // NEW: get short-lived Deepgram token
             val dgToken = deepgramTokenProvider()
@@ -207,7 +210,34 @@ class DeepgramTtsClient(
     }
 
     private fun applyRouting() {
-        try { audioManager.mode = AudioManager.MODE_IN_COMMUNICATION } catch (_: Throwable) { }
+        try {
+            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+            if (Build.VERSION.SDK_INT >= 31) {
+                val preferredTypes = if (speakerphoneEnabled) {
+                    listOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
+                } else {
+                    listOf(
+                        AudioDeviceInfo.TYPE_USB_HEADSET,
+                        AudioDeviceInfo.TYPE_USB_DEVICE,
+                        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                        AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+                    )
+                }
+                val devices = audioManager.availableCommunicationDevices
+                for (type in preferredTypes) {
+                    val dev = devices.firstOrNull { it.type == type }
+                    if (dev != null) {
+                        audioManager.setCommunicationDevice(dev)
+                        audioTrack?.setPreferredDevice(dev)
+                        Log.i(TAG, "TTS routed to type $type (speaker=$speakerphoneEnabled)")
+                        return
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "applyRouting failed: ${t.message}")
+        }
     }
 
     private fun resumeIfSquelched() {
@@ -215,7 +245,10 @@ class DeepgramTtsClient(
             Log.d(TAG, "TTS(resume) after barge-in")
             squelched = false
             acceptPcm = true
-            if (audioTrack == null) audioTrack = buildAudioTrack()
+            if (audioTrack == null) {
+                audioTrack = buildAudioTrack()
+                applyRouting()
+            }
             try { audioTrack?.play() } catch (_: Throwable) {}
         }
     }
